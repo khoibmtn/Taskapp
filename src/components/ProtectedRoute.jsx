@@ -23,5 +23,9 @@ export default function ProtectedRoute({ children }) {
         );
     }
 
+    if (userProfile && userProfile.status === "pending") {
+        return <Navigate to="/waiting-approval" />;
+    }
+
     return children;
 }

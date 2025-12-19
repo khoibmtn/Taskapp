@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- CÁC HÀM TRỢ GIÚP (HELPERS) ---
+    
+    // Lấy dữ liệu profile của user đang đăng nhập
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Kiểm tra đã đăng nhập
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Kiểm tra vai trò (role)
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+
+    // --- QUY TẮC CHO COLLECTION: TASKS ---
+    match /tasks/{taskId} {
+      
+      // 1. ADMIN: Toàn quyền (Full Access)
+      // Cho phép Đọc, Tạo, Sửa, Xóa bất kể điều kiện gì.
+      allow read, write: if hasRole('admin');
+
+      // 2. MANAGER: Quyền theo Khoa / Phòng
+      // - ĐƯỢC: Read, Create, Update nếu task thuộc departmentId của mình.
+      allow create: if hasRole('manager') 
+        && request.resource.data.departmentId == getUserData().departmentId;
+        
+      allow read, update: if hasRole('manager')
+        && resource.data.departmentId == getUserData().departmentId;
+
+      // 3. STAFF: Quyền theo công việc được giao
+      // - ĐƯỢC: Read nếu UID có trong danh sách assignees.
+      // - ĐƯỢC: Update CHỈ phần trạng thái của chính mình trong map 'approvals'.
+      allow read: if hasRole('staff') && (
+        request.auth.uid in resource.data.assignees || 
+        (resource.data.assignees[request.auth.uid] == true)
+      );
+      
+      allow update: if hasRole('staff') && (
+        request.auth.uid in resource.data.assignees || 
+        (resource.data.assignees[request.auth.uid] == true)
+      ) && (
+        // Chỉ cho phép thay đổi duy nhất field 'approvals'
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvals']) &&
+        // Trong map 'approvals', chỉ được phép thay đổi key là UID của chính mình
+        request.resource.data.approvals.diff(resource.data.approvals).affectedKeys().hasOnly([request.auth.uid])
+      );
+    }
+
+    // --- CẤU HÌNH CƠ BẢN CHO CÁC COLLECTION KHÁC (ĐỂ HỆ THỐNG HOẠT ĐỘNG) ---
+    
+    match /users/{uid} {
+      // Cần cho phép read profile để hàm getUserData() ở trên hoạt động
+      allow read: if isAuthenticated();
+      allow write: if hasRole('admin') || request.auth.uid == uid;
+    }
+    
+    match /departments/{deptId} {
+      allow read: if isAuthenticated();
+      allow write: if hasRole('admin');
+    }
+    
+    // Mặc định từ chối các truy cập khác
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

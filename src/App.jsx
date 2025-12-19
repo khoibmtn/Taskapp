@@ -7,8 +7,17 @@ import CreateTask from './pages/CreateTask';
 import TaskDetail from './pages/TaskDetail';
 import Tasks from './pages/Tasks';
 import Settings from './pages/Settings';
+import Notifications from './pages/Notifications';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
+import AdminRoute from './components/AdminRoute';
+import AdminUserList from './pages/admin/AdminUserList';
+import AdminUserDetail from './pages/admin/AdminUserDetail';
+import AdminDepartmentList from './pages/admin/AdminDepartmentList';
+import AdminDepartmentDetail from './pages/admin/AdminDepartmentDetail';
+import ManagerRoute from './components/ManagerRoute';
+import Register from './pages/Register';
+import WaitingApproval from './pages/WaitingApproval';
 
 function App() {
   return (
@@ -16,6 +25,8 @@ function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/waiting-approval" element={<WaitingApproval />} />
 
           <Route
             path="/app"
@@ -26,11 +37,25 @@ function App() {
             }
           >
             <Route index element={<PersonalDashboard />} />
-            <Route path="management" element={<ManagementDashboard />} />
             <Route path="create-task" element={<CreateTask />} />
             <Route path="tasks/:taskId" element={<TaskDetail />} />
             <Route path="tasks" element={<Tasks />} />
+            <Route path="notifications" element={<Notifications />} />
             <Route path="settings" element={<Settings />} />
+          </Route>
+
+
+          {/* Manager Routes */}
+          <Route path="/manager" element={<ProtectedRoute><ManagerRoute><AppLayout /></ManagerRoute></ProtectedRoute>}>
+            <Route path="dashboard" element={<ManagementDashboard />} />
+          </Route>
+
+          {/* Admin Routes */}
+          <Route path="/admin" element={<ProtectedRoute><AdminRoute><AppLayout /></AdminRoute></ProtectedRoute>}>
+            <Route path="users" element={<AdminUserList />} />
+            <Route path="users/:uid" element={<AdminUserDetail />} />
+            <Route path="departments" element={<AdminDepartmentList />} />
+            <Route path="departments/:deptId" element={<AdminDepartmentDetail />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/app" />} />

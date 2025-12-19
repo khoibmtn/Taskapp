@@ -1,34 +1,57 @@
 import { useState, useEffect } from "react";
-import { collection, addDoc, serverTimestamp, getDocs } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 
 export default function CreateTask() {
-    const { currentUser } = useAuth();
+    const { currentUser, userProfile } = useAuth();
     const navigate = useNavigate();
 
     const [title, setTitle] = useState("");
     const [content, setContent] = useState("");
     const [dueDate, setDueDate] = useState("");
     const [dueTime, setDueTime] = useState("");
-    const [priority, setPriority] = useState("normal"); // Default: update to Vietnamese UI value later if needed, stick to internal value for now
-    const [assigneeUids, setAssigneeUids] = useState([]); // Array of UIDs
+    const [priority, setPriority] = useState("normal");
+    const [assigneeUids, setAssigneeUids] = useState([]);
     const [alertFlag, setAlertFlag] = useState(false);
 
-    const [users, setUsers] = useState([]); // List of users for dropdown
+    const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [fetchingUsers, setFetchingUsers] = useState(true);
 
     // Fetch users for dropdown
     useEffect(() => {
-        async function fetchUsers() {
+        if (!userProfile?.selectedDepartmentId) return;
+
+        async function fetchDocs() {
+            setFetchingUsers(true);
             try {
-                const querySnapshot = await getDocs(collection(db, "users"));
+                // Fetch only users who belong to the selected department and are 'active'
+                const usersRef = collection(db, "users");
+                const deptId = userProfile.selectedDepartmentId;
+
+                // Query legacy and new schemas to ensure all active members are found
+                const [qNew, qOld] = await Promise.all([
+                    getDocs(query(usersRef, where("departmentIds", "array-contains", deptId), where("status", "==", "active"))),
+                    getDocs(query(usersRef, where("departmentId", "==", deptId), where("status", "==", "active")))
+                ]);
+
+                const userMap = {};
                 const userList = [];
-                querySnapshot.forEach((doc) => {
-                    userList.push({ ...doc.data(), uid: doc.id });
-                });
+
+                const processSnapshot = (snapshot) => {
+                    snapshot.forEach(doc => {
+                        if (!userMap[doc.id]) {
+                            userMap[doc.id] = true;
+                            userList.push({ ...doc.data(), uid: doc.id });
+                        }
+                    });
+                };
+
+                processSnapshot(qNew);
+                processSnapshot(qOld);
+
                 setUsers(userList);
             } catch (error) {
                 console.error("Error fetching users:", error);
@@ -36,8 +59,8 @@ export default function CreateTask() {
                 setFetchingUsers(false);
             }
         }
-        fetchUsers();
-    }, []);
+        fetchDocs();
+    }, [userProfile?.selectedDepartmentId]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -46,20 +69,17 @@ export default function CreateTask() {
             return;
         }
 
+        if (!userProfile?.selectedDepartmentId) {
+            alert("Bạn chưa chọn khoa/phòng để giao việc.");
+            return;
+        }
+
         setLoading(true);
 
         try {
-            // Combine Date and Time
-            let combinedDate = null;
-            if (dueDate) {
-                // If time is provided, use it, else default to end of day? 
-                // Let's assume user picks both or we just use date with 00:00 or current time.
-                // Simple approach: string concatenation
-                const timeStr = dueTime || "23:59";
-                combinedDate = new Date(`${dueDate}T${timeStr}`);
-            }
+            const timeStr = dueTime || "23:59";
+            const combinedDate = dueDate ? new Date(`${dueDate}T${timeStr}`) : null;
 
-            // Prepare assignees Map
             const assigneesMap = {};
             assigneeUids.forEach(uid => {
                 assigneesMap[uid] = true;
@@ -69,12 +89,13 @@ export default function CreateTask() {
                 title,
                 content,
                 dueAt: combinedDate,
-                priority, // 'normal', 'high', 'low'
+                priority,
                 alertFlag,
                 assignees: assigneesMap,
                 createdBy: currentUser.uid,
                 createdAt: serverTimestamp(),
-                status: 'open'
+                status: 'open',
+                departmentId: userProfile.selectedDepartmentId
             });
 
             alert("Giao việc thành công!");
@@ -196,7 +217,7 @@ export default function CreateTask() {
                                             onChange={() => toggleAssignee(u.uid)}
                                             style={{ marginRight: '10px' }}
                                         />
-                                        {u.displayName || u.name || u.email || u.uid}
+                                        {u.fullName || u.displayName || u.name || u.email || u.uid}
                                     </label>
                                 </div>
                             ))}
