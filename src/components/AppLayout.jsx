@@ -29,7 +29,7 @@ export default function AppLayout() {
                 <div style={{ fontWeight: 'bold', fontSize: '1.2em' }}>Ứng dụng giao việc</div>
 
                 <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                    <span>Xin chào, <strong>{userProfile?.name || userProfile?.email || 'User'}</strong></span>
+                    <span>Xin chào, <strong>{userProfile?.displayName || userProfile?.name || userProfile?.email || 'User'}</strong></span>
                     <button
                         onClick={handleLogout}
                         style={{
@@ -56,6 +56,12 @@ export default function AppLayout() {
                     <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                         <li style={{ marginBottom: '10px' }}>
                             <Link to="/app" style={{ textDecoration: 'none', color: '#333' }}>Dashboard</Link>
+                        </li>
+                        <li style={{ marginBottom: '10px' }}>
+                            <Link to="/app/management" style={{ textDecoration: 'none', color: '#333' }}>Quản lý (Admin)</Link>
+                        </li>
+                        <li style={{ marginBottom: '10px' }}>
+                            <Link to="/app/create-task" style={{ textDecoration: 'none', color: '#1976d2', fontWeight: 'bold' }}>+ Giao việc mới</Link>
                         </li>
                         <li style={{ marginBottom: '10px' }}>
                             <Link to="/app/tasks" style={{ textDecoration: 'none', color: '#333' }}>Công việc</Link>

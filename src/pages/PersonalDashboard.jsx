@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { collection, query, where, getDocs, orderBy, getFirestore } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../firebase";
@@ -15,20 +16,37 @@ export default function PersonalDashboard() {
 
             try {
                 const tasksRef = collection(db, "tasks");
-                // Query tasks where current user is in 'assignees' array
-                // Note: Firestore requires an index for array-contains combined with other filters/orders usually,
-                // but for now we'll just filter by assignee and do client-side sorting/filtering if needed 
-                // or just simple query first.
-                const q = query(
+
+                // 1. Tasks assigned to me
+                const qAssigned = query(
                     tasksRef,
                     where(`assignees.${currentUser.uid}`, "==", true)
                 );
 
-                const querySnapshot = await getDocs(q);
+                // 2. Tasks created by me
+                const qCreated = query(
+                    tasksRef,
+                    where("createdBy", "==", currentUser.uid)
+                );
+
+                // Run queries in parallel
+                const [assignedSnap, createdSnap] = await Promise.all([
+                    getDocs(qAssigned),
+                    getDocs(qCreated)
+                ]);
+
                 const fetchedTasks = [];
-                querySnapshot.forEach((doc) => {
-                    fetchedTasks.push({ id: doc.id, ...doc.data() });
-                });
+                const seenIds = new Set();
+
+                const addDoc = (doc) => {
+                    if (!seenIds.has(doc.id)) {
+                        seenIds.add(doc.id);
+                        fetchedTasks.push({ id: doc.id, ...doc.data() });
+                    }
+                };
+
+                assignedSnap.forEach(addDoc);
+                createdSnap.forEach(addDoc);
 
                 setTasks(fetchedTasks);
             } catch (err) {
@@ -140,11 +158,13 @@ export default function PersonalDashboard() {
                                 marginBottom: '10px',
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                             }}>
-                                <div style={{ fontWeight: 'bold' }}>{task.title}</div>
-                                <div style={{ fontSize: '0.9em', color: '#555' }}>
-                                    Hạn: {dateStr}
-                                    {task.priority && <span style={{ marginLeft: '10px', background: '#eee', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8em' }}>{task.priority}</span>}
-                                </div>
+                                <Link to={`/app/tasks/${task.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+                                    <div style={{ fontWeight: 'bold' }}>{task.title}</div>
+                                    <div style={{ fontSize: '0.9em', color: '#555' }}>
+                                        Hạn: {dateStr}
+                                        {task.priority && <span style={{ marginLeft: '10px', background: '#eee', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8em' }}>{task.priority}</span>}
+                                    </div>
+                                </Link>
                             </li>
                         );
                     })}

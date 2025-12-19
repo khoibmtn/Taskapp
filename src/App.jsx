@@ -2,6 +2,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './contexts/AuthContext';
 import Login from './pages/Login';
 import PersonalDashboard from './pages/PersonalDashboard';
+import ManagementDashboard from './pages/ManagementDashboard';
+import CreateTask from './pages/CreateTask';
+import TaskDetail from './pages/TaskDetail';
 import Tasks from './pages/Tasks';
 import Settings from './pages/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -23,6 +26,9 @@ function App() {
             }
           >
             <Route index element={<PersonalDashboard />} />
+            <Route path="management" element={<ManagementDashboard />} />
+            <Route path="create-task" element={<CreateTask />} />
+            <Route path="tasks/:taskId" element={<TaskDetail />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="settings" element={<Settings />} />
           </Route>
