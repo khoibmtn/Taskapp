@@ -23,16 +23,22 @@ export default function PersonalDashboard() {
     useEffect(() => {
         if (!currentUser) return;
         const fetchCounts = async () => {
-            const [open, completed, all] = await Promise.all([
-                getTaskCount({ uid: currentUser.uid, role: 'assignee', status: 'open' }),
-                getTaskCount({ uid: currentUser.uid, role: 'assignee', status: 'completed' }),
-                getTaskCount({ uid: currentUser.uid, role: 'assignee', status: 'all' })
-            ]);
-            // Also need to consider supervised? The current dashboard shows both.
-            // For simplicity in UI counts, we'll keep them role-agnostic if possible or just combine them.
-            // But simple count() doesn't support OR easily.
-            // We'll just use the assignee counts for the tabs for now as a baseline.
-            setCounts({ open, completed, all });
+            try {
+                const safeCount = (params) => getTaskCount(params).catch(e => {
+                    console.error("Count Error (Index needed?):", e);
+                    return 0;
+                });
+
+                const [open, completed, all] = await Promise.all([
+                    safeCount({ uid: currentUser.uid, role: 'related', status: 'open' }),
+                    safeCount({ uid: currentUser.uid, role: 'related', status: 'completed' }),
+                    safeCount({ uid: currentUser.uid, role: 'related', status: 'all' })
+                ]);
+
+                setCounts({ open, completed, all });
+            } catch (err) {
+                console.error("Fetch Counts Failed:", err);
+            }
         };
         fetchCounts();
     }, [currentUser]);
@@ -43,46 +49,30 @@ export default function PersonalDashboard() {
         else setLoading(true);
 
         try {
-            // Because we can't easily do OR in Firestore with composite indexes across fields,
-            // we fetch Assigned and Supervised separately.
-            const queryParams = {
+            const q = getTasksQuery({
                 uid: currentUser.uid,
+                role: 'related',
                 status: filterStatus,
                 pageSize: PAGE_SIZE,
                 lastDoc: isLoadMore ? lastDoc : null
-            };
+            });
 
-            const [assignedSnap, supervisedSnap] = await Promise.all([
-                getDocs(getTasksQuery({ ...queryParams, role: 'assignee' })),
-                getDocs(getTasksQuery({ ...queryParams, role: 'supervisor' }))
-            ]);
+            const snap = await getDocs(q);
+            const newFetchedTasks = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            const newTasks = [];
-            const taskMap = isLoadMore ? { ...tasks.reduce((acc, t) => ({ ...acc, [t.id]: t }), {}) } : {};
+            setTasksCache(prev => {
+                const currentTasks = isLoadMore ? (prev[filterStatus] || []) : [];
+                // Simple merge, relying on list replacement for non-loadMore
+                const merged = isLoadMore ? [...currentTasks, ...newFetchedTasks] : newFetchedTasks;
+                return { ...prev, [filterStatus]: merged };
+            });
 
-            const processSnap = (snap) => {
-                snap.forEach(doc => {
-                    taskMap[doc.id] = { id: doc.id, ...doc.data() };
-                });
-            };
-
-            processSnap(assignedSnap);
-            processSnap(supervisedSnap);
-
-            const combined = Object.values(taskMap);
-            setTasksCache(prev => ({ ...prev, [filterStatus]: combined }));
-
-            // For hasMore/lastDoc - we'll need to store these per tab too if we want robust pagination in cache
-            // But for now, simple cache for the first page is already a huge win.
-            setHasMore(assignedSnap.docs.length === PAGE_SIZE || supervisedSnap.docs.length === PAGE_SIZE);
-
-            // For lastDoc, we'd ideally merge sort them, but simple approach: use the last from assignedSnap if it exists
-            if (assignedSnap.docs.length > 0) {
-                setLastDoc(assignedSnap.docs[assignedSnap.docs.length - 1]);
-            } else if (supervisedSnap.docs.length > 0) {
-                setLastDoc(supervisedSnap.docs[supervisedSnap.docs.length - 1]);
+            setHasMore(snap.docs.length === PAGE_SIZE);
+            if (snap.docs.length > 0) {
+                setLastDoc(snap.docs[snap.docs.length - 1]);
             }
 
+            // Error handling matches previous block structure implied by surrounding code
         } catch (err) {
             console.error("Error fetching tasks:", err);
             setError(`Lỗi: ${err.message || "Không thể tải danh sách công việc"}. ${err.code === 'failed-precondition' ? 'Có thể thiếu Index Firestore.' : ''}`);
@@ -121,8 +111,8 @@ export default function PersonalDashboard() {
             });
         });
 
-        // Also fetch admins/managers who might be task creators
-        const unsubAdmins = onSnapshot(query(usersRef, where("role", "in", ["admin", "manager", "asigner"])), (snap) => {
+        // Fetch all users to ensure names are resolved correctly
+        const unsubAdmins = onSnapshot(usersRef, (snap) => {
             setUserMap(prev => {
                 const next = { ...prev };
                 snap.forEach(doc => { next[doc.id] = doc.data(); });
@@ -251,18 +241,16 @@ export default function PersonalDashboard() {
         if (task.timeType === 'recurrence') {
             const { frequency, daysOfWeek, dayOfMonth, specificDate } = task.recurrence || {};
             if (frequency === 'weekly') {
-                const dayMap = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-                const days = daysOfWeek?.map(d => dayMap[d]).join(', ');
-                return `Hàng tuần: ${days}`;
+                const days = (daysOfWeek || []).map(d => d === 0 ? "CN" : `T${d + 1}`).join(", ");
+                return `Hàng tuần (${days})`;
             }
-            if (frequency === 'monthly') return `Vào ngày ${dayOfMonth} hàng tháng`;
+            if (frequency === 'monthly') return `Ngày ${dayOfMonth} hàng tháng`;
             if (frequency === 'yearly') {
                 let dateDisplay = specificDate;
-                // Normalize "MM-DD" to "DD/MM"
                 if (dateDisplay && dateDisplay.includes('-')) {
                     dateDisplay = dateDisplay.split('-').reverse().join('/');
                 }
-                return `Vào ngày ${dateDisplay} hàng năm`;
+                return `Ngày ${dateDisplay} hàng năm`;
             }
             return "Định kỳ";
         }
@@ -377,7 +365,8 @@ export default function PersonalDashboard() {
                                         {task.title}
                                     </div>
                                     <div style={{ fontSize: '0.9em', color: '#555' }}>
-                                        <div style={{ marginBottom: '5px' }}>Hạn: {getDeadlineDisplay(task)}</div>
+                                        <div style={{ marginBottom: '4px' }}>Hạn: {getDeadlineDisplay(task)}</div>
+                                        <div style={{ marginBottom: '4px' }}>Ngày giao: {task.createdAt?.seconds ? new Date(task.createdAt.seconds * 1000).toLocaleDateString('vi-VN') : 'N/A'}</div>
                                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
                                             {/* Priority Badge */}
                                             {task.priority && (

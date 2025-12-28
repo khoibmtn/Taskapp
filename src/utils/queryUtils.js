@@ -5,6 +5,8 @@ import {
     orderBy,
     limit,
     startAfter,
+    or,
+    and,
     getCountFromServer
 } from "firebase/firestore";
 import { db } from "../firebase";
@@ -29,71 +31,97 @@ const withActiveTaskFilters = (baseConstraints = []) => {
 export const getTasksQuery = ({
     uid,
     deptId,
-    role, // 'assignee', 'supervisor', 'department'
+    role, // 'assignee', 'supervisor', 'department', 'related'
     status, // 'all', 'open', 'completed'
     pageSize = 20,
     lastDoc = null,
-    sortBy = 'dueAt',
-    sortDir = 'asc'
+    sortBy = 'createdAt',
+    sortDir = 'desc'
 }) => {
-    const constraints = [];
+    // 1. Collect all Filter constraints
+    const filterConstraints = [];
 
-    // 1. Role Scoping
+    // Role Scoping
     if (role === 'assignee' && uid) {
-        constraints.push(where("assigneeUids", "array-contains", uid));
+        filterConstraints.push(where("assigneeUids", "array-contains", uid));
     } else if (role === 'supervisor' && uid) {
-        constraints.push(where("supervisorId", "==", uid));
+        filterConstraints.push(where("supervisorId", "==", uid));
     } else if (role === 'department' && deptId) {
-        constraints.push(where("departmentId", "==", deptId));
+        filterConstraints.push(where("departmentId", "==", deptId));
+    } else if (role === 'related' && uid) {
+        filterConstraints.push(or(
+            where("assigneeUids", "array-contains", uid),
+            where("supervisorId", "==", uid)
+        ));
     }
 
-    // 2. Status Filtering
+    // Status Filtering
     if (status === 'open') {
-        constraints.push(where("status", "!=", "completed"));
+        filterConstraints.push(where("status", "!=", "completed"));
     } else if (status === 'completed') {
-        constraints.push(where("status", "==", "completed"));
+        filterConstraints.push(where("status", "==", "completed"));
     }
 
-    // 3. Global Hidden Filters
-    const filteredConstraints = withActiveTaskFilters(constraints);
+    // Global filters
+    const allFilters = withActiveTaskFilters(filterConstraints);
 
-    // 4. Sorting & Pagination
-    // Important: Any field with an inequality filter MUST be the first orderBy field.
+    // 2. Collect Modifiers (OrderBy, Limit, StartAfter)
+    const modifiers = [];
+
     if (status === 'open') {
-        filteredConstraints.push(orderBy("status", "asc"));
+        modifiers.push(orderBy("status", "asc"));
     }
-
-    // Default sorting
-    filteredConstraints.push(orderBy(sortBy, sortDir));
-
+    modifiers.push(orderBy(sortBy, sortDir));
     if (lastDoc) {
-        filteredConstraints.push(startAfter(lastDoc));
+        modifiers.push(startAfter(lastDoc));
     }
+    modifiers.push(limit(pageSize));
 
-    filteredConstraints.push(limit(pageSize));
-
-    return query(collection(db, "tasks"), ...filteredConstraints);
+    // 3. Compose Query
+    // Validate: If we use OR, we must wrap all filters in AND? 
+    // Actually, explicit 'and()' is robust for all cases with >1 filter.
+    if (allFilters.length > 1) {
+        return query(collection(db, "tasks"), and(...allFilters), ...modifiers);
+    } else {
+        return query(collection(db, "tasks"), ...allFilters, ...modifiers);
+    }
 };
 
 /**
  * Get count for a specific query scope
  */
 export const getTaskCount = async ({ uid, deptId, role, status }) => {
-    const constraints = [];
-    if (role === 'assignee') constraints.push(where("assigneeUids", "array-contains", uid));
-    else if (role === 'supervisor') constraints.push(where("supervisorId", "==", uid));
-    else if (role === 'department') constraints.push(where("departmentId", "==", deptId));
+    const filterConstraints = [];
 
+    // Role
+    if (role === 'assignee') filterConstraints.push(where("assigneeUids", "array-contains", uid));
+    else if (role === 'supervisor') filterConstraints.push(where("supervisorId", "==", uid));
+    else if (role === 'department') filterConstraints.push(where("departmentId", "==", deptId));
+    else if (role === 'related') filterConstraints.push(or(where("assigneeUids", "array-contains", uid), where("supervisorId", "==", uid)));
+
+    // Status
     if (status === 'open') {
-        constraints.push(where("status", "!=", "completed"));
-        // IMPORTANT: Inequality filter normally requires orderBy the same field to hit the correct index
-        // This matches the index used by getTasksQuery
-        constraints.push(orderBy("status", "asc"));
+        filterConstraints.push(where("status", "!=", "completed"));
     } else if (status === 'completed') {
-        constraints.push(where("status", "==", "completed"));
+        filterConstraints.push(where("status", "==", "completed"));
     }
 
-    const q = query(collection(db, "tasks"), ...withActiveTaskFilters(constraints));
+    // Combine with global filters
+    const allFilters = withActiveTaskFilters(filterConstraints);
+
+    // Explicit modifiers relevant for index matching specific to 'open' status inequality
+    const modifiers = [];
+    if (status === 'open') {
+        modifiers.push(orderBy("status", "asc"));
+    }
+
+    let q;
+    if (allFilters.length > 1) {
+        q = query(collection(db, "tasks"), and(...allFilters), ...modifiers);
+    } else {
+        q = query(collection(db, "tasks"), ...allFilters, ...modifiers);
+    }
+
     const snapshot = await getCountFromServer(q);
     return snapshot.data().count;
 };
