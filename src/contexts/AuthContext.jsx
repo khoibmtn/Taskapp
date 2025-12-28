@@ -127,11 +127,21 @@ export function AuthProvider({ children }) {
         // Listen for foreground messages
         const unsubscribeMessaging = onMessage(messaging, (payload) => {
             console.log('Message received in foreground: ', payload);
+
+            // 1. Show native browser notification
             if (Notification.permission === 'granted') {
                 new Notification(payload.notification.title, {
-                    body: payload.notification.body
+                    body: payload.notification.body,
+                    icon: '/logo192.png'
                 });
             }
+
+            // 2. Play a subtle sound (Optional, but good for UX)
+            // const audio = new Audio('/notification.mp3'); 
+            // audio.play().catch(e => console.log('Audio play failed', e));
+
+            // Note: UI updates happen automatically via Firestore onSnapshot listeners
+            // which are already implemented in dashboards.
         });
 
         return () => {
