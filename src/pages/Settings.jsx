@@ -24,13 +24,6 @@ export default function Settings() {
         <div>
             <h2>Cài đặt</h2>
             <p>Cấu hình hệ thống sẽ hiển thị ở đây.</p>
-
-            <div style={{ marginTop: '50px', padding: '20px', background: '#ffebee', border: '1px solid #ffcdd2' }}>
-                <h3>Khu vực dành cho Developer</h3>
-                <button onClick={handleGrantAdmin} style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer' }}>
-                    ⚡ Cấp quyền Admin cho tôi (Dev Only)
-                </button>
-            </div>
         </div>
     );
 }

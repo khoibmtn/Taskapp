@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, limit } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { useNavigate, Link } from "react-router-dom";
 
@@ -27,33 +27,45 @@ export default function Login() {
         setLoading(true);
 
         let loginEmail = identifier.trim();
+        let targetAuthEmail = null;
 
-        // 1. Logic for phone or real email lookup
-        const digitsOnly = loginEmail.replace(/\D/g, '');
-        const isPotentialPhone = digitsOnly.length >= 8 && !loginEmail.includes('@');
+        try {
+            // Check if input looks like an email (contains @)
+            if (loginEmail.includes('@')) {
+                // 1. Search by email field
+                const q = query(collection(db, "users"), where("email", "==", loginEmail), limit(1));
+                const snap = await getDocs(q);
 
-        if (isPotentialPhone) {
-            const normalized = normalizePhone(digitsOnly);
-            loginEmail = `${normalized}@task.app`;
-        } else if (loginEmail.includes('@') && !loginEmail.endsWith('@task.app')) {
-            // It's a real email, look up the authEmail in Firestore
-            try {
-                const q = query(collection(db, "users"), where("email", "==", loginEmail));
-                const querySnapshot = await getDocs(q);
-                if (querySnapshot.empty) {
-                    setError("Email này chưa được đăng ký trong hệ thống.");
+                if (!snap.empty) {
+                    targetAuthEmail = snap.docs[0].data().authEmail;
+                } else {
+                    setError("Không tìm thấy tài khoản với email này.");
                     setLoading(false);
                     return;
                 }
-                // Use the authEmail stored in the user document
-                loginEmail = querySnapshot.docs[0].data().authEmail;
-            } catch (err) {
-                console.error("Error looking up email:", err);
-                setError("Lỗi khi kiểm tra tài khoản: " + err.message);
-                setLoading(false);
-                return;
+            } else {
+                // 2. Search by phone field (remove all whitespace first)
+                const cleanPhone = loginEmail.replace(/\s/g, '');
+                const q = query(collection(db, "users"), where("phone", "==", cleanPhone), limit(1));
+                const snap = await getDocs(q);
+
+                if (!snap.empty) {
+                    targetAuthEmail = snap.docs[0].data().authEmail;
+                } else {
+                    setError("Không tìm thấy tài khoản với số điện thoại này.");
+                    setLoading(false);
+                    return;
+                }
             }
+        } catch (err) {
+            console.error("Lookup error:", err);
+            setError("Lỗi khi tìm kiếm tài khoản: " + err.message);
+            setLoading(false);
+            return;
         }
+
+        // Use the found authEmail for Firebase Authentication
+        loginEmail = targetAuthEmail;
 
         const paddedPassword = padPassword(password);
 

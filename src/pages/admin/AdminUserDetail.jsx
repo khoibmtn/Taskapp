@@ -49,7 +49,7 @@ export default function AdminUserDetail() {
                     });
                 } else {
                     alert("Người dùng không tồn tại");
-                    navigate("/admin/users");
+                    navigate("/admin/management");
                 }
             } catch (err) {
                 console.error("Error fetching admin detail:", err);
@@ -81,7 +81,7 @@ export default function AdminUserDetail() {
 
             await updateDoc(doc(db, "users", uid), updates);
             alert("Cập nhật thành công!");
-            navigate("/admin/users");
+            navigate("/admin/management");
         } catch (err) {
             console.error("Error updating user:", err);
             alert("Lỗi khi cập nhật.");
@@ -95,7 +95,7 @@ export default function AdminUserDetail() {
             const { deleteDoc } = await import("firebase/firestore");
             await deleteDoc(doc(db, "users", uid));
             alert("Đã xóa người dùng vĩnh viễn.");
-            navigate("/admin/users");
+            navigate("/admin/management");
         } catch (err) {
             console.error("Error deleting user:", err);
             alert("Lỗi khi xóa người dùng: " + err.message);
@@ -118,7 +118,7 @@ export default function AdminUserDetail() {
 
     return (
         <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-            <button onClick={() => navigate("/admin/users")} style={{ marginBottom: '20px', cursor: 'pointer' }}>&larr; Quay lại danh sách</button>
+            <button onClick={() => navigate("/admin/management")} style={{ marginBottom: '20px', cursor: 'pointer' }}>&larr; Quay lại Quản lý Khoa, Phòng</button>
 
             <div style={{ background: '#fff', padding: '30px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                 <h2 style={{ marginBottom: '20px', marginTop: 0 }}>Chi tiết người dùng</h2>
@@ -227,12 +227,24 @@ export default function AdminUserDetail() {
                     )}
 
                     {user.status === 'active' && (
-                        <button
-                            onClick={() => handleUpdate('active')}
-                            style={{ padding: '10px 20px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                        >
-                            Lưu thay đổi thông tin
-                        </button>
+                        <>
+                            <button
+                                onClick={() => handleUpdate('active')}
+                                style={{ padding: '10px 20px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                            >
+                                Lưu thay đổi thông tin
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (window.confirm('Bạn có chắc chắn muốn NGỪNG HOẠT ĐỘNG tài khoản này?')) {
+                                        handleUpdate('inactive');
+                                    }
+                                }}
+                                style={{ padding: '10px 20px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                            >
+                                Xóa người dùng
+                            </button>
+                        </>
                     )}
 
                     {user.status === 'delete_request' && (

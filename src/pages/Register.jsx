@@ -76,10 +76,11 @@ export default function Register() {
         try {
             // 1. Check Uniqueness
             // ... (keep uniqueness checks)
-            // Phone check
-            const phoneQuery = query(collection(db, "users"), where("phone", "==", normalizedPhone));
-            const phoneSnap = await getDocs(phoneQuery);
-            if (!phoneSnap.empty) {
+            // Phone check (check both old 'phone' and new 'phoneNumber' fields)
+            const phoneQuery1 = query(collection(db, "users"), where("phone", "==", normalizedPhone));
+            const phoneQuery2 = query(collection(db, "users"), where("phoneNumber", "==", normalizedPhone));
+            const [phoneSnap1, phoneSnap2] = await Promise.all([getDocs(phoneQuery1), getDocs(phoneQuery2)]);
+            if (!phoneSnap1.empty || !phoneSnap2.empty) {
                 throw new Error("Số điện thoại này đã được sử dụng.");
             }
 
@@ -101,9 +102,11 @@ export default function Register() {
             await setDoc(doc(db, "users", user.uid), {
                 fullName,
                 phone: normalizedPhone,
+                phoneNumber: normalizedPhone, // For unified login lookup
                 email: (email && email.trim()) || null,
                 authEmail: authEmail,
                 departmentId,
+                departmentIds: [departmentId], // Array for easier querying
                 position,
                 role: "staff",
                 status: "pending",

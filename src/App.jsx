@@ -18,6 +18,7 @@ import AdminUserDetail from './pages/admin/AdminUserDetail';
 import AdminDepartmentList from './pages/admin/AdminDepartmentList';
 import AdminDepartmentDetail from './pages/admin/AdminDepartmentDetail';
 import AdminManagement from './pages/admin/AdminManagement';
+import DataNormalization from './pages/admin/DataNormalization';
 import ManagerRoute from './components/ManagerRoute';
 import Register from './pages/Register';
 import WaitingApproval from './pages/WaitingApproval';
@@ -61,6 +62,7 @@ function App() {
             <Route path="users/:uid" element={<AdminUserDetail />} />
             <Route path="departments" element={<AdminDepartmentList />} />
             <Route path="departments/:deptId" element={<AdminDepartmentDetail />} />
+            <Route path="normalize-data" element={<DataNormalization />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/app" />} />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, onSnapshot, writeBatch, getCountFromServer } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -139,17 +139,24 @@ export default function AdminManagement() {
         }
     };
 
-    // --- Listen for status counts ---
+    // --- Fetch for status counts ---
+    const fetchStatusCounts = async () => {
+        try {
+            const results = await Promise.all(userTabs.map(async tab => {
+                const q = query(collection(db, "users"), where("status", "==", tab.id));
+                const snap = await getCountFromServer(q);
+                return { id: tab.id, count: snap.data().count };
+            }));
+            const nextCounts = {};
+            results.forEach(r => nextCounts[r.id] = r.count);
+            setStatusCounts(nextCounts);
+        } catch (err) {
+            console.error("Error fetching status counts:", err);
+        }
+    };
+
     useEffect(() => {
-        const unsub = onSnapshot(collection(db, "users"), (snap) => {
-            const counts = {};
-            snap.forEach(d => {
-                const s = d.data().status || 'active';
-                counts[s] = (counts[s] || 0) + 1;
-            });
-            setStatusCounts(counts);
-        });
-        return () => unsub();
+        fetchStatusCounts();
     }, []);
 
     const handleRoleUpdate = async (targetUid, newRole) => {
@@ -159,6 +166,40 @@ export default function AdminManagement() {
         } catch (err) {
             console.error(err);
             alert("Lỗi: " + err.message);
+        }
+    };
+
+    const runTaskNormalization = async () => {
+        if (!window.confirm("Bạn có chắc chắn muốn chuẩn hóa dữ liệu toàn bộ công việc? Việc này sẽ thêm các trường cần thiết cho việc tối ưu hóa hiệu năng.")) return;
+        setUsersLoading(true);
+        try {
+            const snap = await getDocs(collection(db, "tasks"));
+            const batch = writeBatch(db);
+            let count = 0;
+            snap.forEach(d => {
+                const data = d.data();
+                const updates = {};
+                let needsUpdate = false;
+                if (data.assignees && !data.assigneeUids) {
+                    updates.assigneeUids = Object.keys(data.assignees);
+                    needsUpdate = true;
+                }
+                if (data.isArchived === undefined) { updates.isArchived = false; needsUpdate = true; }
+                if (data.isDeleted === undefined) { updates.isDeleted = false; needsUpdate = true; }
+                if (data.isRecurringTemplate === undefined) { updates.isRecurringTemplate = false; needsUpdate = true; }
+
+                if (needsUpdate) {
+                    batch.update(d.ref, updates);
+                    count++;
+                }
+            });
+            if (count > 0) await batch.commit();
+            alert(`Đã chuẩn hóa thành công ${count} công việc.`);
+        } catch (err) {
+            console.error(err);
+            alert("Lỗi chuẩn hóa: " + err.message);
+        } finally {
+            setUsersLoading(false);
         }
     };
 
@@ -344,7 +385,9 @@ export default function AdminManagement() {
 
     return (
         <div style={{ padding: '20px' }}>
-            <h2 style={{ marginBottom: '20px' }}>Quản lý Khoa, Phòng</h2>
+            <div style={{ marginBottom: '20px' }}>
+                <h2 style={{ margin: 0 }}>Quản lý Khoa, Phòng</h2>
+            </div>
 
             {/* Main Tabs */}
             <div style={{ display: 'flex', gap: '5px', marginBottom: '25px', background: '#e0e0e0', borderRadius: '25px', padding: '4px', width: 'fit-content' }}>

@@ -11,7 +11,11 @@
             ]
         }
     ],
-    "firestore": {
-        "rules": "firestore.rules"
-    }
+    "firestore": [
+        {
+            "database": "taskapp",
+            "rules": "firestore.rules",
+            "indexes": "firestore.indexes.json"
+        }
+    ]
 }

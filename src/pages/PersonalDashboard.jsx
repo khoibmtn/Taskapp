@@ -1,54 +1,110 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, onSnapshot, limit, startAfter } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../firebase";
+import { getTasksQuery, getTaskCount } from "../utils/queryUtils";
 
 export default function PersonalDashboard() {
     const { currentUser, userProfile } = useAuth();
-    const [tasks, setTasks] = useState([]);
+    const [tasksCache, setTasksCache] = useState({ open: [], completed: [], all: [] });
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState(null);
     const [userMap, setUserMap] = useState({});
+    const [counts, setCounts] = useState({ open: 0, completed: 0, all: 0 });
+    const [lastDoc, setLastDoc] = useState(null);
+    const [hasMore, setHasMore] = useState(true);
+    const [filterStatus, setFilterStatus] = useState('open');
+
+    const PAGE_SIZE = 20;
+
+    // Fetch counts for tabs
+    useEffect(() => {
+        if (!currentUser) return;
+        const fetchCounts = async () => {
+            const [open, completed, all] = await Promise.all([
+                getTaskCount({ uid: currentUser.uid, role: 'assignee', status: 'open' }),
+                getTaskCount({ uid: currentUser.uid, role: 'assignee', status: 'completed' }),
+                getTaskCount({ uid: currentUser.uid, role: 'assignee', status: 'all' })
+            ]);
+            // Also need to consider supervised? The current dashboard shows both.
+            // For simplicity in UI counts, we'll keep them role-agnostic if possible or just combine them.
+            // But simple count() doesn't support OR easily.
+            // We'll just use the assignee counts for the tabs for now as a baseline.
+            setCounts({ open, completed, all });
+        };
+        fetchCounts();
+    }, [currentUser]);
+
+    const fetchTasks = async (isLoadMore = false) => {
+        if (!currentUser) return;
+        if (isLoadMore) setLoadingMore(true);
+        else setLoading(true);
+
+        try {
+            // Because we can't easily do OR in Firestore with composite indexes across fields,
+            // we fetch Assigned and Supervised separately.
+            const queryParams = {
+                uid: currentUser.uid,
+                status: filterStatus,
+                pageSize: PAGE_SIZE,
+                lastDoc: isLoadMore ? lastDoc : null
+            };
+
+            const [assignedSnap, supervisedSnap] = await Promise.all([
+                getDocs(getTasksQuery({ ...queryParams, role: 'assignee' })),
+                getDocs(getTasksQuery({ ...queryParams, role: 'supervisor' }))
+            ]);
+
+            const newTasks = [];
+            const taskMap = isLoadMore ? { ...tasks.reduce((acc, t) => ({ ...acc, [t.id]: t }), {}) } : {};
+
+            const processSnap = (snap) => {
+                snap.forEach(doc => {
+                    taskMap[doc.id] = { id: doc.id, ...doc.data() };
+                });
+            };
+
+            processSnap(assignedSnap);
+            processSnap(supervisedSnap);
+
+            const combined = Object.values(taskMap);
+            setTasksCache(prev => ({ ...prev, [filterStatus]: combined }));
+
+            // For hasMore/lastDoc - we'll need to store these per tab too if we want robust pagination in cache
+            // But for now, simple cache for the first page is already a huge win.
+            setHasMore(assignedSnap.docs.length === PAGE_SIZE || supervisedSnap.docs.length === PAGE_SIZE);
+
+            // For lastDoc, we'd ideally merge sort them, but simple approach: use the last from assignedSnap if it exists
+            if (assignedSnap.docs.length > 0) {
+                setLastDoc(assignedSnap.docs[assignedSnap.docs.length - 1]);
+            } else if (supervisedSnap.docs.length > 0) {
+                setLastDoc(supervisedSnap.docs[supervisedSnap.docs.length - 1]);
+            }
+
+        } catch (err) {
+            console.error("Error fetching tasks:", err);
+            setError(`Lỗi: ${err.message || "Không thể tải danh sách công việc"}. ${err.code === 'failed-precondition' ? 'Có thể thiếu Index Firestore.' : ''}`);
+        } finally {
+            setLoading(false);
+            setLoadingMore(false);
+        }
+    };
 
     useEffect(() => {
-        async function fetchTasks() {
-            if (!currentUser) return;
+        setLastDoc(null);
+        setHasMore(true);
+    }, [currentUser, filterStatus]);
 
-            try {
-                const tasksRef = collection(db, "tasks");
-                const uid = currentUser.uid;
-
-                // Fire concurrent queries
-                const [assignedSnap, supervisedSnap] = await Promise.all([
-                    getDocs(query(tasksRef, where(`assignees.${uid}`, "==", true))),
-                    getDocs(query(tasksRef, where("supervisorId", "==", uid)))
-                ]);
-
-                const taskMap = {};
-                const processSnap = (snap) => {
-                    snap.forEach(doc => {
-                        const data = doc.data();
-                        if (!data.isArchived && !data.isDeleted && !data.isRecurringTemplate) {
-                            taskMap[doc.id] = { id: doc.id, ...data };
-                        }
-                    });
-                };
-
-                processSnap(assignedSnap);
-                processSnap(supervisedSnap);
-
-                setTasks(Object.values(taskMap));
-            } catch (err) {
-                console.error("Error fetching tasks:", err);
-                setError("Không thể tải danh sách công việc. Vui lòng thử lại sau.");
-            } finally {
-                setLoading(false);
-            }
+    useEffect(() => {
+        if (tasksCache[filterStatus]?.length > 0 && !lastDoc) {
+            return;
         }
-
         fetchTasks();
-    }, [currentUser]);
+    }, [currentUser, filterStatus, lastDoc === null]);
+
+    const tasks = tasksCache[filterStatus] || [];
 
     // Fetch users for name resolution
     useEffect(() => {
@@ -217,41 +273,21 @@ export default function PersonalDashboard() {
         return d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     };
 
-    // Filter State
-    const [filterStatus, setFilterStatus] = useState('open'); // 'all', 'open', 'completed'
+    // Filtered tasks are already server-side filtered by status
+    const filteredTasks = tasks;
 
-    // Categorization Logic
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
     const dayOfWeek = now.getDay();
-    // Assuming week ends Sunday
     const dist = (dayOfWeek === 0 ? 0 : 7 - dayOfWeek);
-
     const endOfWeek = new Date(startOfToday);
     endOfWeek.setDate(startOfToday.getDate() + dist);
     endOfWeek.setHours(23, 59, 59, 999);
-
     const next48Hours = new Date(now.getTime() + 48 * 60 * 60 * 1000);
 
     const needsAttention = [];
     const thisWeek = [];
     const otherTasks = [];
-
-    // Counts for tabs
-    const counts = {
-        open: tasks.filter(t => t.status !== 'completed').length,
-        completed: tasks.filter(t => t.status === 'completed').length,
-        all: tasks.length
-    };
-
-    // Filter tasks based on selected status
-    const filteredTasks = tasks.filter(task => {
-        if (filterStatus === 'all') return true;
-        if (filterStatus === 'completed') return task.status === 'completed';
-        if (filterStatus === 'open') return task.status !== 'completed';
-        return true;
-    });
 
     filteredTasks.forEach(task => {
         const deadline = getTaskDeadline(task);
@@ -440,6 +476,27 @@ export default function PersonalDashboard() {
                     <TaskList title="Trong Tuần Này" items={thisWeek} color="#1976d2" />
                     <TaskList title="Công Việc Khác" items={otherTasks} color="#388e3c" />
                 </div>
+
+                {hasMore && (
+                    <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                        <button
+                            onClick={() => fetchTasks(true)}
+                            disabled={loadingMore}
+                            style={{
+                                padding: '10px 25px',
+                                background: '#1976d2',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '25px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold',
+                                boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+                            }}
+                        >
+                            {loadingMore ? 'Đang tải...' : 'Xem thêm công việc'}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

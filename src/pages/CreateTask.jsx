@@ -203,7 +203,9 @@ export default function CreateTask() {
                 status: 'open',
                 departmentId: userProfile.selectedDepartmentId,
                 supervisorId: supervisorId || null,
-                isDeleted: false
+                isDeleted: false,
+                isArchived: false,
+                isRecurringTemplate: false
             };
 
             // Process Time Data
@@ -244,6 +246,7 @@ export default function CreateTask() {
                 assigneesMap[uid] = true;
             });
             taskData.assignees = assigneesMap;
+            taskData.assigneeUids = uidsToSave; // Array for indexing
 
             const docRef = await addDoc(collection(db, "tasks"), taskData);
 

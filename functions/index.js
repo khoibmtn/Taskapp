@@ -259,6 +259,8 @@ exports.generateRecurringTasks = onSchedule("every 1 hours", async (event) => {
             const instance = {
                 ...template,
                 isRecurringTemplate: false,
+                isDeleted: false,
+                isArchived: false,
                 parentTaskId: templateId,
                 dueAt: admin.firestore.Timestamp.fromDate(nextDue),
                 nextDeadline: null,
@@ -268,6 +270,9 @@ exports.generateRecurringTasks = onSchedule("every 1 hours", async (event) => {
                 status: 'open',
                 approvals: {}
             };
+            if (template.assignees) {
+                instance.assigneeUids = Object.keys(template.assignees);
+            }
             delete instance.id; // Ensure no ID conflict if it was in template data
 
             promises.push(db.collection("tasks").add(instance));
