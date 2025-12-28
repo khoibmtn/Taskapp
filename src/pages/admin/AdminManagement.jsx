@@ -25,6 +25,8 @@ export default function AdminManagement() {
     const [departments, setDepartments] = useState([]);
     const [deptsLoading, setDeptsLoading] = useState(true);
 
+    const [statusCounts, setStatusCounts] = useState({});
+
     const ROLE_LABELS = {
         admin: "Quản trị viên",
         manager: "Trưởng khoa/phòng",
@@ -137,6 +139,19 @@ export default function AdminManagement() {
         }
     };
 
+    // --- Listen for status counts ---
+    useEffect(() => {
+        const unsub = onSnapshot(collection(db, "users"), (snap) => {
+            const counts = {};
+            snap.forEach(d => {
+                const s = d.data().status || 'active';
+                counts[s] = (counts[s] || 0) + 1;
+            });
+            setStatusCounts(counts);
+        });
+        return () => unsub();
+    }, []);
+
     const handleRoleUpdate = async (targetUid, newRole) => {
         try {
             await updateDoc(doc(db, "users", targetUid), { role: newRole });
@@ -243,7 +258,7 @@ export default function AdminManagement() {
                         cursor: 'pointer',
                         fontWeight: statusTab === tab.id ? 'bold' : 'normal',
                         whiteSpace: 'nowrap'
-                    }}>{tab.label}</button>
+                    }}>{tab.label} ({statusCounts[tab.id] || 0})</button>
                 ))}
             </div>
             {usersLoading ? <p>Đang tải...</p> : (
@@ -340,7 +355,7 @@ export default function AdminManagement() {
                     fontWeight: activeTab === 'personnel' ? 'bold' : 'normal',
                     boxShadow: activeTab === 'personnel' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
                     cursor: 'pointer'
-                }}>Quản lý Nhân sự</button>
+                }}>Nhân sự ({deptUsers.length})</button>
                 <button onClick={() => setActiveTab('users')} style={{
                     padding: '10px 20px', borderRadius: '20px', border: 'none',
                     background: activeTab === 'users' ? '#fff' : 'transparent',
@@ -348,7 +363,7 @@ export default function AdminManagement() {
                     fontWeight: activeTab === 'users' ? 'bold' : 'normal',
                     boxShadow: activeTab === 'users' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
                     cursor: 'pointer'
-                }}>Duyệt người dùng</button>
+                }}>Người dùng ({Object.values(statusCounts).reduce((a, b) => a + b, 0)})</button>
                 <button onClick={() => setActiveTab('departments')} style={{
                     padding: '10px 20px', borderRadius: '20px', border: 'none',
                     background: activeTab === 'departments' ? '#fff' : 'transparent',
@@ -356,7 +371,7 @@ export default function AdminManagement() {
                     fontWeight: activeTab === 'departments' ? 'bold' : 'normal',
                     boxShadow: activeTab === 'departments' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
                     cursor: 'pointer'
-                }}>Quản lý khoa phòng</button>
+                }}>Khoa phòng ({departments.length})</button>
             </div>
 
             {activeTab === 'personnel' && renderPersonnelTab()}

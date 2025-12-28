@@ -277,7 +277,7 @@ export default function EditTask() {
 
             await updateDoc(doc(db, "tasks", taskId), updates);
             alert("Đã cập nhật công việc!");
-            navigate(`/app/tasks/${taskId}`);
+            navigate(`/app/tasks/${taskId}`, { replace: true });
         } catch (err) {
             console.error("Error updating task:", err);
             alert("Lỗi: " + err.message);
@@ -294,7 +294,7 @@ export default function EditTask() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h2 style={{ color: '#1976d2', margin: 0 }}>Chỉnh sửa Công việc</h2>
                 <button
-                    onClick={() => navigate(`/app/tasks/${taskId}`)}
+                    onClick={() => navigate(`/app/tasks/${taskId}`, { replace: true })}
                     style={{ padding: '8px 16px', background: '#f44336', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                 >Hủy</button>
             </div>

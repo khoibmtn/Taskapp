@@ -213,6 +213,8 @@ export default function CreateTask() {
                 taskData.fromDate = fromDate ? new Date(`${fromDate}T00:00`) : null;
                 taskData.toDate = toDate ? new Date(`${toDate}T${timeStr}`) : null;
             } else if (timeType === 'recurrence') {
+                taskData.isRecurringTemplate = true; // Mark as Template
+                taskData.lastGeneratedDate = serverTimestamp(); // Track generation
                 taskData.recurrence = {
                     frequency: recurrenceFreq,
                     daysOfWeek: recurrenceFreq === 'weekly' ? selectedDays : null,
@@ -220,7 +222,7 @@ export default function CreateTask() {
                     specificDate: recurrenceFreq === 'yearly' ? specificDate : null
                 };
 
-                // Calculate persistent next deadline
+                // Calculate first deadline
                 const initialDeadline = calculateNextDeadline(
                     recurrenceFreq,
                     recurrenceFreq === 'weekly' ? selectedDays : null,
@@ -243,7 +245,21 @@ export default function CreateTask() {
             });
             taskData.assignees = assigneesMap;
 
-            await addDoc(collection(db, "tasks"), taskData);
+            const docRef = await addDoc(collection(db, "tasks"), taskData);
+
+            // IF RECURRING: Immediately spawn the first instance
+            if (timeType === 'recurrence') {
+                const firstInstance = {
+                    ...taskData,
+                    isRecurringTemplate: false, // Instance is NOT a template
+                    parentTaskId: docRef.id,     // Linked to parent
+                    dueAt: taskData.nextDeadline, // Fixed dueAt for this instance
+                    nextDeadline: null,          // Instance doesn't need nextDeadline
+                    lastGeneratedDate: null,
+                    createdAt: serverTimestamp()
+                };
+                await addDoc(collection(db, "tasks"), firstInstance);
+            }
 
             alert("Giao việc thành công!");
             // Redirect to Personal Dashboard as it is accessible by everyone

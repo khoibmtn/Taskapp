@@ -80,8 +80,8 @@ export default function TaskDetail() {
                     }
                 }
 
-                // 5. Fetch Available Users for Edit (if creator)
-                if (t.createdBy === currentUser.uid || userProfile?.role === 'admin') {
+                // 5. Fetch Available Users for Edit (if creator or admin)
+                if (t.departmentId && (t.createdBy === currentUser.uid || userProfile?.role === 'admin')) {
                     const { collection, getDocs, query, where } = await import("firebase/firestore");
                     const usersRef = collection(db, "users");
                     const qActive = query(usersRef, where("departmentId", "==", t.departmentId), where("status", "==", "active"));
@@ -217,40 +217,10 @@ export default function TaskDetail() {
             };
 
             if (allApproved) {
-                // CHECK RECURRENCE ROTATION
-                if (task.timeType === 'recurrence') {
-                    // 1. Calculate New Deadline
-                    // Use Saved Deadline or calc from scratch
-                    const currentDeadline = task.nextDeadline ? (task.nextDeadline.toDate ? task.nextDeadline.toDate() : new Date(task.nextDeadline)) : null;
-                    const { frequency, daysOfWeek, dayOfMonth, specificDate } = task.recurrence || {};
-
-                    const newNextDeadline = calculateNextDeadline(frequency, daysOfWeek, dayOfMonth, specificDate, currentDeadline);
-
-                    // 2. Archive Current "Instance"
-                    await addDoc(collection(db, "tasks"), {
-                        ...task,
-                        id: null, // Let firestore gen new ID
-                        originalTaskId: taskId,
-                        isArchived: true,
-                        status: 'completed',
-                        approvals: newApprovals,
-                        completedAt: serverTimestamp(),
-                        archivedAt: serverTimestamp(),
-                        title: `${task.title} (Hoàn thành: ${new Date().toLocaleDateString('vi-VN')})`
-                    });
-
-                    // 3. Reset Main Task
-                    updates.status = 'open';
-                    updates.approvals = {}; // Reset approvals
-                    updates.nextDeadline = newNextDeadline; // Update deadline
-                    alert(`Đã duyệt! Công việc định kỳ đã được gia hạn tới ${newNextDeadline.toLocaleDateString('vi-VN')}.`);
-
-                } else {
-                    // Normal Task Completion
-                    updates.status = "completed";
-                    updates.completedAt = serverTimestamp();
-                    alert(status === 'approved' ? "Đã duyệt!" : "Đã từ chối!");
-                }
+                // Normal Task Completion
+                updates.status = "completed";
+                updates.completedAt = serverTimestamp();
+                alert(status === 'approved' ? "Đã duyệt!" : "Đã từ chối!");
             } else {
                 alert(status === 'approved' ? "Đã duyệt!" : "Đã từ chối!");
             }
@@ -342,9 +312,14 @@ export default function TaskDetail() {
                     {canEdit && (
                         <>
                             <button onClick={() => navigate(`/app/tasks/${taskId}/edit`)} style={{ padding: '5px 15px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                Sửa công việc
+                                Sửa kỳ này
                             </button>
-                            <button onClick={handleSoftDelete} style={{ padding: '5px 15px', background: '#fff', color: '#f44336', border: '1px solid #f44336', borderRadius: '4px', cursor: 'pointer' }}>
+                            {task.parentTaskId && (
+                                <button onClick={() => navigate(`/app/tasks/${task.parentTaskId}/edit`)} style={{ padding: '5px 15px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
+                                    Sửa chu kỳ (Gốc)
+                                </button>
+                            )}
+                            <button onClick={handleSoftDelete} style={{ padding: '5px 15px', background: '#fff', color: '#f44336', border: '1px solid #f44336', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }}>
                                 Xóa
                             </button>
                         </>

@@ -83,9 +83,9 @@ export default function ManagementDashboard() {
     useEffect(() => {
         // Filter: Tasks I created for others OR tasks I supervise
         const myTasks = tasks.filter(t => {
-            if (t.isDeleted || t.isArchived) return false;
+            if (t.isDeleted || t.isArchived || t.isRecurringTemplate) return false;
             const iCreatedIt = t.createdBy === currentUser.uid;
-            const iSupervise = t.supervisors && t.supervisors[currentUser.uid];
+            const iSupervise = t.supervisorId === currentUser.uid;
             // Check if assigned to others (not only me)
             const assignees = t.assignees ? Object.keys(t.assignees) : [];
             const assignedToOthers = assignees.some(uid => uid !== currentUser.uid);
@@ -216,8 +216,8 @@ export default function ManagementDashboard() {
 
         // Assignees
         const assigneeNames = task.assignees ? Object.keys(task.assignees).map(uid => getUserName(uid)).join(', ') : 'N/A';
-        // Supervisors
-        const supervisorNames = task.supervisors ? Object.keys(task.supervisors).map(uid => getUserName(uid)).join(', ') : null;
+        // Supervisor
+        const supervisorName = task.supervisorId ? getUserName(task.supervisorId) : null;
 
         return (
             <li style={{
@@ -239,7 +239,7 @@ export default function ManagementDashboard() {
                         </div>
                         <div style={{ color: '#666', fontSize: '0.8em' }}>
                             <span style={{ marginRight: '10px' }}>👤 Giao cho: <strong>{assigneeNames}</strong></span>
-                            {supervisorNames && <span>👁️ Giám sát: <strong>{supervisorNames}</strong></span>}
+                            {supervisorName && <span>👁️ Giám sát: <strong>{supervisorName}</strong></span>}
                         </div>
                     </div>
                 </Link>
@@ -373,7 +373,7 @@ export default function ManagementDashboard() {
                                 cursor: 'pointer',
                                 fontSize: '1em'
                             }}
-                        >Đang làm</button>
+                        >Đang làm ({stats.total})</button>
                         <button
                             onClick={() => setFilterStatus('completed')}
                             style={{
@@ -386,7 +386,7 @@ export default function ManagementDashboard() {
                                 cursor: 'pointer',
                                 fontSize: '1em'
                             }}
-                        >Đã xong</button>
+                        >Đã xong ({stats.completed})</button>
                         <button
                             onClick={() => setFilterStatus('all')}
                             style={{
@@ -399,7 +399,7 @@ export default function ManagementDashboard() {
                                 cursor: 'pointer',
                                 fontSize: '1em'
                             }}
-                        >Tất cả</button>
+                        >Tất cả ({stats.total + stats.completed})</button>
                     </div>
 
                     {/* Content area with border */}

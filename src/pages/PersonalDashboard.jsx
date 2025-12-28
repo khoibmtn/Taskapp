@@ -17,26 +17,28 @@ export default function PersonalDashboard() {
 
             try {
                 const tasksRef = collection(db, "tasks");
+                const uid = currentUser.uid;
 
-                // Only fetch tasks assigned to me
-                // Tasks I created for others should be in Management Dashboard, not Personal Dashboard
-                const qAssigned = query(
-                    tasksRef,
-                    where(`assignees.${currentUser.uid}`, "==", true)
-                );
+                // Fire concurrent queries
+                const [assignedSnap, supervisedSnap] = await Promise.all([
+                    getDocs(query(tasksRef, where(`assignees.${uid}`, "==", true))),
+                    getDocs(query(tasksRef, where("supervisorId", "==", uid)))
+                ]);
 
-                const assignedSnap = await getDocs(qAssigned);
+                const taskMap = {};
+                const processSnap = (snap) => {
+                    snap.forEach(doc => {
+                        const data = doc.data();
+                        if (!data.isArchived && !data.isDeleted && !data.isRecurringTemplate) {
+                            taskMap[doc.id] = { id: doc.id, ...data };
+                        }
+                    });
+                };
 
-                const fetchedTasks = [];
-                assignedSnap.forEach(doc => {
-                    const data = doc.data();
-                    // Exclude archived tasks
-                    if (!data.isArchived && !data.isDeleted) {
-                        fetchedTasks.push({ id: doc.id, ...data });
-                    }
-                });
+                processSnap(assignedSnap);
+                processSnap(supervisedSnap);
 
-                setTasks(fetchedTasks);
+                setTasks(Object.values(taskMap));
             } catch (err) {
                 console.error("Error fetching tasks:", err);
                 setError("Không thể tải danh sách công việc. Vui lòng thử lại sau.");
@@ -236,6 +238,13 @@ export default function PersonalDashboard() {
     const thisWeek = [];
     const otherTasks = [];
 
+    // Counts for tabs
+    const counts = {
+        open: tasks.filter(t => t.status !== 'completed').length,
+        completed: tasks.filter(t => t.status === 'completed').length,
+        all: tasks.length
+    };
+
     // Filter tasks based on selected status
     const filteredTasks = tasks.filter(task => {
         if (filterStatus === 'all') return true;
@@ -316,8 +325,8 @@ export default function PersonalDashboard() {
                         const coAssignees = allAssignees.filter(uid => uid !== currentUser.uid);
                         const coAssigneeNames = coAssignees.length > 0 ? coAssignees.map(uid => getUserName(uid)).join(', ') : null;
 
-                        // Supervisors
-                        const supervisorNames = task.supervisors ? Object.keys(task.supervisors).map(uid => getUserName(uid)).join(', ') : null;
+                        // Supervisor
+                        const supervisorName = task.supervisorId ? getUserName(task.supervisorId) : null;
 
                         return (
                             <li key={task.id} style={{
@@ -359,11 +368,11 @@ export default function PersonalDashboard() {
                                                 {sLabel}
                                             </span>
                                         </div>
-                                        {/* Metadata: Creator, Co-Assignees, Supervisors */}
+                                        {/* Metadata: Creator, Co-Assignees, Supervisor */}
                                         <div style={{ color: '#666', fontSize: '0.8em' }}>
                                             {creatorName && <div>📝 Giao bởi: <strong>{creatorName}</strong></div>}
                                             {coAssigneeNames && <div>👥 Làm cùng: <strong>{coAssigneeNames}</strong></div>}
-                                            {supervisorNames && <div>👁️ Giám sát: <strong>{supervisorNames}</strong></div>}
+                                            {supervisorName && <div>👁️ Giám sát: <strong>{supervisorName}</strong></div>}
                                         </div>
                                     </div>
                                 </Link>
@@ -395,7 +404,7 @@ export default function PersonalDashboard() {
                         cursor: 'pointer',
                         fontSize: '1em'
                     }}
-                >Đang làm</button>
+                >Đang làm ({counts.open})</button>
                 <button
                     onClick={() => setFilterStatus('completed')}
                     style={{
@@ -408,7 +417,7 @@ export default function PersonalDashboard() {
                         cursor: 'pointer',
                         fontSize: '1em'
                     }}
-                >Đã xong</button>
+                >Đã xong ({counts.completed})</button>
                 <button
                     onClick={() => setFilterStatus('all')}
                     style={{
@@ -421,7 +430,7 @@ export default function PersonalDashboard() {
                         cursor: 'pointer',
                         fontSize: '1em'
                     }}
-                >Tất cả</button>
+                >Tất cả ({counts.all})</button>
             </div>
 
             {/* Content area with border */}

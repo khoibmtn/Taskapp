@@ -215,3 +215,82 @@ exports.checkDeadlines = onSchedule("every 1 hours", async (event) => {
 
     return Promise.all(promises);
 });
+/**
+ * Scheduled Cron: Tự động tạo công việc từ Template định kỳ
+ * Chạy mỗi giờ
+ */
+exports.generateRecurringTasks = onSchedule("every 1 hours", async (event) => {
+    console.log("🚀 Starting recurring task generation...");
+    const now = new Date();
+    const templatesSnap = await db.collection("tasks")
+        .where("isRecurringTemplate", "==", true)
+        .get();
+
+    const promises = [];
+
+    templatesSnap.forEach(doc => {
+        const template = doc.data();
+        const templateId = doc.id;
+
+        // Use nextDeadline as the "marker" for when the next instance is due
+        let nextDue = template.nextDeadline ? (template.nextDeadline.toDate ? template.nextDeadline.toDate() : new Date(template.nextDeadline)) : null;
+
+        if (nextDue && now >= nextDue) {
+            console.log(`Creating instance for template: ${templateId} ("${template.title}")`);
+
+            // 1. Create Instance
+            const instance = {
+                ...template,
+                isRecurringTemplate: false,
+                parentTaskId: templateId,
+                dueAt: admin.firestore.Timestamp.fromDate(nextDue),
+                nextDeadline: null,
+                lastGeneratedDate: null,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                status: 'open',
+                approvals: {}
+            };
+            delete instance.id; // Ensure no ID conflict if it was in template data
+
+            promises.push(db.collection("tasks").add(instance));
+
+            // 2. Update Template with the NEXT deadline
+            const nextNextDue = calculateNextOccurrence(nextDue, template.recurrence);
+            promises.push(db.collection("tasks").doc(templateId).update({
+                nextDeadline: admin.firestore.Timestamp.fromDate(nextNextDue),
+                lastGeneratedDate: admin.firestore.FieldValue.serverTimestamp()
+            }));
+        }
+    });
+
+    return Promise.all(promises);
+});
+
+function calculateNextOccurrence(baseDate, recurrence) {
+    const { frequency, daysOfWeek, dayOfMonth, specificDate } = recurrence;
+    let nextDate = new Date(baseDate);
+
+    // Reset to start of day for cleaner calculation, or keep time? 
+    // Usually keep the time established in baseDate.
+
+    if (frequency === 'weekly' && Array.isArray(daysOfWeek)) {
+        const sortedDays = [...daysOfWeek].map(Number).sort((a, b) => a - b);
+        const currentDay = baseDate.getDay();
+        let nextDay = sortedDays.find(d => d > currentDay);
+        let daysToAdd = 0;
+        if (nextDay !== undefined) {
+            daysToAdd = nextDay - currentDay;
+        } else {
+            nextDay = sortedDays[0];
+            daysToAdd = (7 - currentDay) + nextDay;
+        }
+        nextDate.setDate(baseDate.getDate() + daysToAdd);
+    } else if (frequency === 'monthly' && dayOfMonth) {
+        nextDate.setMonth(baseDate.getMonth() + 1);
+        nextDate.setDate(dayOfMonth);
+    } else if (frequency === 'yearly' && specificDate) {
+        nextDate.setFullYear(baseDate.getFullYear() + 1);
+    }
+    return nextDate;
+}
