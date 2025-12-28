@@ -181,6 +181,17 @@ export default function ManagementDashboard() {
     };
 
     const getDeadlineDisplay = (task) => {
+        // Recurrence handling
+        if (task.timeType === 'recurrence' && task.recurrence) {
+            const { frequency, daysOfWeek, dayOfMonth, specificDate } = task.recurrence;
+            if (frequency === 'weekly') {
+                const days = (daysOfWeek || []).map(d => d === 0 ? "CN" : `T${d + 1}`).join(", ");
+                return `Hàng tuần (${days})`;
+            }
+            if (frequency === 'monthly') return `Ngày ${dayOfMonth} hàng tháng`;
+            if (frequency === 'yearly') return `Ngày ${specificDate} hàng năm`;
+        }
+
         const d = getTaskDeadline(task);
         if (!d) return "Chưa thiết lập";
         return d.toLocaleDateString('vi-VN');
@@ -226,6 +237,7 @@ export default function ManagementDashboard() {
                     <div style={{ fontWeight: 'bold', marginBottom: '5px', fontSize: '1.05em' }}>{task.title}</div>
                     <div style={{ fontSize: '0.85em', color: '#555' }}>
                         <div style={{ marginBottom: '4px' }}>Hạn: {getDeadlineDisplay(task)}</div>
+                        <div style={{ marginBottom: '4px' }}>Ngày giao: {task.createdAt?.seconds ? new Date(task.createdAt.seconds * 1000).toLocaleDateString('vi-VN') : 'N/A'}</div>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
                             {task.priority && (
                                 <span style={{ background: pColor, color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75em', fontWeight: 'bold' }}>{pLabel}</span>

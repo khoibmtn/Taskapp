@@ -84,8 +84,14 @@ export const getTaskCount = async ({ uid, deptId, role, status }) => {
     else if (role === 'supervisor') constraints.push(where("supervisorId", "==", uid));
     else if (role === 'department') constraints.push(where("departmentId", "==", deptId));
 
-    if (status === 'open') constraints.push(where("status", "!=", "completed"));
-    else if (status === 'completed') constraints.push(where("status", "==", "completed"));
+    if (status === 'open') {
+        constraints.push(where("status", "!=", "completed"));
+        // IMPORTANT: Inequality filter normally requires orderBy the same field to hit the correct index
+        // This matches the index used by getTasksQuery
+        constraints.push(orderBy("status", "asc"));
+    } else if (status === 'completed') {
+        constraints.push(where("status", "==", "completed"));
+    }
 
     const q = query(collection(db, "tasks"), ...withActiveTaskFilters(constraints));
     const snapshot = await getCountFromServer(q);

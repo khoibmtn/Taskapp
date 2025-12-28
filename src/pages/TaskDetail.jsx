@@ -301,7 +301,7 @@ export default function TaskDetail() {
             }
             return <div><strong>Định kỳ:</strong> {label}</div>;
         }
-        return <div><strong>Hạn dùng:</strong> {formatDate(task.dueAt)}</div>;
+        return <div><strong>Hạn hoàn thành:</strong> {formatDate(task.dueAt)}</div>;
     };
 
     return (
@@ -332,7 +332,7 @@ export default function TaskDetail() {
                     <h2 style={{ margin: 0, color: '#1976d2' }}>{task.title}</h2>
                     <div style={{ marginTop: '10px', fontSize: '0.9em', color: '#666', display: 'flex', gap: '20px' }}>
                         <span>Người giao: <strong>{creatorName}</strong></span>
-                        <span>Ngày tạo: <strong>{formatDate(task.createdAt)}</strong></span>
+                        <span>Ngày giao việc: <strong>{formatDate(task.createdAt)}</strong></span>
                         {supervisorName && <span>Giám sát: <strong>{supervisorName}</strong></span>}
                     </div>
                 </div>
