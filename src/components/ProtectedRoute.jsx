@@ -23,7 +23,7 @@ export default function ProtectedRoute({ children }) {
         );
     }
 
-    if (userProfile && userProfile.status === "pending") {
+    if (userProfile && (userProfile.status === "pending" || userProfile.status === "reject_request" || userProfile.status === "rejected" || userProfile.status === "inactive")) {
         return <Navigate to="/waiting-approval" />;
     }
 

@@ -106,20 +106,10 @@ export default function AppLayout() {
                         <li style={{ marginBottom: '10px' }}>
                             <Link to="/app" style={{ textDecoration: 'none', color: '#333' }}>Dashboard</Link>
                         </li>
-                        {(userProfile?.role === 'manager' || userProfile?.role === 'admin') && (
+                        {(userProfile?.role === 'manager' || userProfile?.role === 'admin' || userProfile?.role === 'asigner') && (
                             <li style={{ marginBottom: '10px' }}>
                                 <Link to="/manager/dashboard" style={{ textDecoration: 'none', color: '#333' }}>Dashboard Quản lý</Link>
                             </li>
-                        )}
-                        {userProfile?.role === 'admin' && (
-                            <>
-                                <li style={{ marginBottom: '10px' }}>
-                                    <Link to="/admin/users" style={{ textDecoration: 'none', color: '#d32f2f', fontWeight: 'bold' }}>⚡ Duyệt Users</Link>
-                                </li>
-                                <li style={{ marginBottom: '10px' }}>
-                                    <Link to="/admin/departments" style={{ textDecoration: 'none', color: '#d32f2f', fontWeight: 'bold' }}>⚡ QL Khoa Phòng</Link>
-                                </li>
-                            </>
                         )}
                         <li style={{ marginBottom: '10px' }}>
                             <Link to="/app/create-task" style={{ textDecoration: 'none', color: '#1976d2', fontWeight: 'bold' }}>+ Giao việc mới</Link>
@@ -127,6 +117,16 @@ export default function AppLayout() {
                         <li style={{ marginBottom: '10px' }}>
                             <Link to="/app/tasks" style={{ textDecoration: 'none', color: '#333' }}>Công việc</Link>
                         </li>
+                        {userProfile?.role === 'admin' && (
+                            <li style={{ marginBottom: '10px' }}>
+                                <Link to="/admin/management" style={{ textDecoration: 'none', color: '#d32f2f', fontWeight: 'bold' }}>⚡ Quản lý khoa, phòng</Link>
+                            </li>
+                        )}
+                        {userProfile?.role === 'manager' && (
+                            <li style={{ marginBottom: '10px' }}>
+                                <Link to="/manager/personnel" style={{ textDecoration: 'none', color: '#333' }}>Quản lý Nhân sự</Link>
+                            </li>
+                        )}
                         <li style={{ marginBottom: '10px' }}>
                             <Link to="/app/settings" style={{ textDecoration: 'none', color: '#333' }}>Cài đặt</Link>
                         </li>

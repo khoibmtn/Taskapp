@@ -70,17 +70,21 @@ export default function AdminUserList() {
 
     const tabs = [
         { id: 'pending', label: 'Chờ duyệt' },
+        { id: 'reject_request', label: 'Yêu cầu Từ chối' },
         { id: 'active', label: 'Đang hoạt động' },
         { id: 'delete_request', label: 'Yêu cầu Xóa' },
-        { id: 'rejected', label: 'Bị từ chối' }
+        { id: 'rejected', label: 'Bị từ chối' },
+        { id: 'inactive', label: 'Ngừng hoạt động' }
     ];
 
     const getStatusLabel = (s) => {
         switch (s) {
             case 'pending': return <span style={{ color: 'orange' }}>Chờ duyệt</span>;
+            case 'reject_request': return <span style={{ color: 'red', fontWeight: 'bold' }}>YC Từ chối</span>;
             case 'active': return <span style={{ color: 'green' }}>Hoạt động</span>;
             case 'delete_request': return <span style={{ color: 'red', fontWeight: 'bold' }}>YC Xóa</span>;
             case 'rejected': return <span style={{ color: 'red' }}>Từ chối</span>;
+            case 'inactive': return <span style={{ color: '#757575' }}>Ngừng hoạt động</span>;
             default: return s;
         }
     };

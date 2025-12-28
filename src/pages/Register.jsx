@@ -101,7 +101,7 @@ export default function Register() {
             await setDoc(doc(db, "users", user.uid), {
                 fullName,
                 phone: normalizedPhone,
-                email: email || null,
+                email: (email && email.trim()) || null,
                 authEmail: authEmail,
                 departmentId,
                 position,

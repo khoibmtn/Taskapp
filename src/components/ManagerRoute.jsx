@@ -12,9 +12,9 @@ export default function ManagerRoute({ children }) {
         return <Navigate to="/login" />;
     }
 
-    if (userProfile?.role !== "manager" && userProfile?.role !== "admin") {
-        // Not a manager or admin, redirect to Personal Dashboard
-        return <Navigate to="/app" />;
+    if (userProfile?.role !== "manager" && userProfile?.role !== "admin" && userProfile?.role !== "asigner") {
+        // Not a manager, admin, or asigner, redirect to Personal Dashboard
+        return <Navigate to="/app" />
     }
 
     return children;

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { auth, db, messaging } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 
 const AuthContext = createContext();
@@ -54,66 +54,91 @@ export function AuthProvider({ children }) {
     };
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        let unsubscribeProfile = null;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
             setCurrentUser(user);
             setError(null);
+
             if (user) {
+                const docRef = doc(db, "users", user.uid);
+
+                // 1. One-time fetch for migration logic
                 try {
-                    const docRef = doc(db, "users", user.uid);
                     const docSnap = await getDoc(docRef);
-
                     if (docSnap.exists()) {
-                        let data = docSnap.data();
+                        const data = docSnap.data();
+                        const isPolluted = data.email && data.email.endsWith('@task.app');
+                        const needsMigration = !data.fullName || !data.role || !data.status || !data.departmentIds || isPolluted || !data.authEmail;
 
-                        // Setup Notifications
-                        setupNotifications(user.uid);
-
-                        // ... (Schema migration logic)
-                        const needsMigration = !data.fullName || !data.role || !data.status || !data.departmentIds;
                         if (needsMigration) {
-                            // Convert single departmentId to array if needed
                             const initialDeptIds = data.departmentIds || (data.departmentId ? [data.departmentId] : []);
-
                             const updates = {
                                 fullName: data.fullName || data.displayName || user.email?.split('@')[0] || "User",
                                 role: data.role || "staff",
                                 status: data.status || "active",
-                                email: data.email || user.email,
+                                email: (data.email && !data.email.endsWith('@task.app')) ? data.email : (user.email?.endsWith('@task.app') ? null : user.email),
                                 authEmail: user.email,
                                 departmentIds: initialDeptIds,
                                 selectedDepartmentId: data.selectedDepartmentId || (initialDeptIds.length > 0 ? initialDeptIds[0] : ""),
                                 position: data.position || ""
                             };
-                            await setDoc(docRef, updates, { merge: true });
-                            data = { ...data, ...updates };
+                            await updateDoc(docRef, updates);
                         }
-                        setUserProfile(data);
-
+                        setupNotifications(user.uid);
                     } else {
-                        setError(`Profile document not found for UID: ${user.uid}`);
-                        setUserProfile(null);
+                        // Create basic profile if missing
+                        const initialProfile = {
+                            fullName: user.displayName || user.email?.split('@')[0] || "New User",
+                            email: user.email,
+                            authEmail: user.email,
+                            role: "staff",
+                            status: "pending",
+                            departmentIds: [],
+                            createdAt: serverTimestamp()
+                        };
+                        await setDoc(docRef, initialProfile);
                     }
                 } catch (err) {
-                    console.error("Error fetching user profile:", err);
-                    setError(err.message);
-                    setUserProfile(null);
+                    console.error("Migration/Setup error:", err);
                 }
+
+                // 2. Start real-time listener for profile
+                unsubscribeProfile = onSnapshot(docRef, (snap) => {
+                    if (snap.exists()) {
+                        setUserProfile(snap.data());
+                    } else {
+                        setError("Profile disconnected.");
+                        setUserProfile(null);
+                    }
+                    setLoading(false);
+                }, (err) => {
+                    console.error("Profile listen error:", err);
+                    setError(err.message);
+                    setLoading(false);
+                });
+
             } else {
                 setUserProfile(null);
+                setLoading(false);
             }
-            setLoading(false);
         });
 
         // Listen for foreground messages
-        onMessage(messaging, (payload) => {
+        const unsubscribeMessaging = onMessage(messaging, (payload) => {
             console.log('Message received in foreground: ', payload);
-            // Optionally trigger a toast or browser notification
-            new Notification(payload.notification.title, {
-                body: payload.notification.body
-            });
+            if (Notification.permission === 'granted') {
+                new Notification(payload.notification.title, {
+                    body: payload.notification.body
+                });
+            }
         });
 
-        return unsubscribe;
+        return () => {
+            unsubscribeAuth();
+            if (unsubscribeProfile) unsubscribeProfile();
+            unsubscribeMessaging();
+        };
     }, []);
 
     const value = { currentUser, userProfile, loading, error, switchDepartment };

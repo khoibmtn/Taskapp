@@ -3,7 +3,9 @@ import { AuthProvider } from './contexts/AuthContext';
 import Login from './pages/Login';
 import PersonalDashboard from './pages/PersonalDashboard';
 import ManagementDashboard from './pages/ManagementDashboard';
+import PersonnelManagement from './pages/PersonnelManagement';
 import CreateTask from './pages/CreateTask';
+import EditTask from './pages/EditTask';
 import TaskDetail from './pages/TaskDetail';
 import Tasks from './pages/Tasks';
 import Settings from './pages/Settings';
@@ -15,6 +17,7 @@ import AdminUserList from './pages/admin/AdminUserList';
 import AdminUserDetail from './pages/admin/AdminUserDetail';
 import AdminDepartmentList from './pages/admin/AdminDepartmentList';
 import AdminDepartmentDetail from './pages/admin/AdminDepartmentDetail';
+import AdminManagement from './pages/admin/AdminManagement';
 import ManagerRoute from './components/ManagerRoute';
 import Register from './pages/Register';
 import WaitingApproval from './pages/WaitingApproval';
@@ -39,19 +42,21 @@ function App() {
             <Route index element={<PersonalDashboard />} />
             <Route path="create-task" element={<CreateTask />} />
             <Route path="tasks/:taskId" element={<TaskDetail />} />
+            <Route path="tasks/:taskId/edit" element={<EditTask />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="settings" element={<Settings />} />
           </Route>
 
 
-          {/* Manager Routes */}
           <Route path="/manager" element={<ProtectedRoute><ManagerRoute><AppLayout /></ManagerRoute></ProtectedRoute>}>
             <Route path="dashboard" element={<ManagementDashboard />} />
+            <Route path="personnel" element={<PersonnelManagement />} />
           </Route>
 
           {/* Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute><AdminRoute><AppLayout /></AdminRoute></ProtectedRoute>}>
+            <Route path="management" element={<AdminManagement />} />
             <Route path="users" element={<AdminUserList />} />
             <Route path="users/:uid" element={<AdminUserDetail />} />
             <Route path="departments" element={<AdminDepartmentList />} />

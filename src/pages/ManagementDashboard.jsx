@@ -1,15 +1,22 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { collection, getDocs, doc, query, where, updateDoc, serverTimestamp } from "firebase/firestore";
+import { Link, useSearchParams } from "react-router-dom";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function ManagementDashboard() {
     const { userProfile, currentUser } = useAuth();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState("tasks"); // "tasks" or "users"
-    const [deptUsers, setDeptUsers] = useState([]);
+
+    // Read activeTab from URL, default to "reports"
+    const activeTab = searchParams.get("tab") || "reports";
+    const setActiveTab = (tab) => {
+        setSearchParams({ tab });
+    };
+
+    const [filterStatus, setFilterStatus] = useState('open'); // 'all', 'open', 'completed'
 
     // Filtered users for mapping UID -> Name
     const [userMap, setUserMap] = useState({});
@@ -18,150 +25,170 @@ export default function ManagementDashboard() {
     const [stats, setStats] = useState({
         total: 0,
         overdue: 0,
-        highPriority: 0
+        highPriority: 0,
+        completed: 0
     });
 
     const [needsAttention, setNeedsAttention] = useState([]);
+    const [thisWeek, setThisWeek] = useState([]);
+    const [otherTasks, setOtherTasks] = useState([]);
     const [assigneeGroups, setAssigneeGroups] = useState({});
-    const [selectedUser, setSelectedUser] = useState(null);
 
     useEffect(() => {
-        if (userProfile?.selectedDepartmentId) {
-            fetchData();
-        } else {
+        if (!userProfile?.selectedDepartmentId) {
             setLoading(false);
+            return;
         }
+
+        const deptId = userProfile.selectedDepartmentId;
+        const usersRef = collection(db, "users");
+        const tasksRef = collection(db, "tasks");
+
+        setLoading(true);
+
+        // 1. Listen for all users in the dept (for name resolution)
+        const unsubUsers = onSnapshot(query(usersRef, where("departmentIds", "array-contains", deptId)), (snap) => {
+            setUserMap(prev => {
+                const next = { ...prev };
+                snap.forEach(doc => { next[doc.id] = doc.data(); });
+                return next;
+            });
+        });
+
+        // 2. Listen for additional managers/admins (for supervisor name resolution)
+        const unsubManagers = onSnapshot(query(usersRef, where("role", "in", ["admin", "manager"])), (snap) => {
+            setUserMap(prev => {
+                const next = { ...prev };
+                snap.forEach(doc => { next[doc.id] = doc.data(); });
+                return next;
+            });
+        });
+
+        // 3. Listen for Tasks in department
+        const unsubTasks = onSnapshot(query(tasksRef, where("departmentId", "==", deptId)), (snap) => {
+            const fetchedTasks = [];
+            snap.forEach(doc => fetchedTasks.push({ id: doc.id, ...doc.data() }));
+            setTasks(fetchedTasks);
+            setLoading(false);
+        });
+
+        return () => {
+            unsubUsers();
+            unsubManagers();
+            unsubTasks();
+        };
     }, [userProfile?.selectedDepartmentId]);
 
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const deptId = userProfile.selectedDepartmentId;
-
-            // 1. Fetch Users in this Dept
-            const usersRef = collection(db, "users");
-
-            // We fetch both schemas to support unmigrated users
-            // Using a simple merge strategy for maximum compatibility
-            const [qNew, qOld] = await Promise.all([
-                getDocs(query(usersRef, where("departmentIds", "array-contains", deptId))),
-                getDocs(query(usersRef, where("departmentId", "==", deptId)))
-            ]);
-
-            const uMap = {};
-            const dUsers = [];
-
-            const processSnapshot = (snapshot) => {
-                snapshot.forEach(doc => {
-                    if (!uMap[doc.id]) {
-                        const data = doc.data();
-                        uMap[doc.id] = data;
-                        dUsers.push({ id: doc.id, ...data });
-                    }
-                });
-            };
-
-            processSnapshot(qNew);
-            processSnapshot(qOld);
-
-            const snapManagers = await getDocs(query(usersRef, where("role", "in", ["admin", "manager"])));
-            snapManagers.forEach(doc => {
-                if (!uMap[doc.id]) {
-                    uMap[doc.id] = doc.data();
-                }
-            });
-
-            setUserMap(uMap);
-            setDeptUsers(dUsers);
-
-            // 2. Fetch Tasks (Filtered by selectedDepartmentId)
-            const tasksRef = collection(db, "tasks");
-            const q = query(tasksRef, where("departmentId", "==", deptId));
-            const snapshot = await getDocs(q);
-
-            const fetchedTasks = [];
-            snapshot.forEach(doc => {
-                fetchedTasks.push({ id: doc.id, ...doc.data() });
-            });
-
-            setTasks(fetchedTasks);
-            processData(fetchedTasks);
-        } catch (error) {
-            console.error("Error fetching data for management:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // Reactive processing whenever tasks update
+    useEffect(() => {
+        // Filter: Tasks I created for others OR tasks I supervise
+        const myTasks = tasks.filter(t => {
+            if (t.isDeleted || t.isArchived) return false;
+            const iCreatedIt = t.createdBy === currentUser.uid;
+            const iSupervise = t.supervisors && t.supervisors[currentUser.uid];
+            // Check if assigned to others (not only me)
+            const assignees = t.assignees ? Object.keys(t.assignees) : [];
+            const assignedToOthers = assignees.some(uid => uid !== currentUser.uid);
+            return (iCreatedIt && assignedToOthers) || iSupervise;
+        });
+        processData(myTasks);
+    }, [tasks, currentUser.uid]);
 
     const processData = (allTasks) => {
         const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const dayOfWeek = now.getDay();
+        const dist = (dayOfWeek === 0 ? 0 : 7 - dayOfWeek);
+        const endOfWeek = new Date(startOfToday);
+        endOfWeek.setDate(startOfToday.getDate() + dist);
+        endOfWeek.setHours(23, 59, 59, 999);
         const next48Hours = new Date(now.getTime() + 48 * 60 * 60 * 1000);
 
         let total = 0;
         let overdueCount = 0;
         let highPrioCount = 0;
+        let completedCount = 0;
         const attentionList = [];
+        const weekList = [];
+        const otherList = [];
         const groups = {};
 
         allTasks.forEach(task => {
-            total++;
-            let dueDate = null;
-            if (task.dueAt) {
-                dueDate = task.dueAt.toDate ? task.dueAt.toDate() : new Date(task.dueAt);
+            const isCompleted = task.status === 'completed';
+            if (isCompleted) {
+                completedCount++;
+                // Don't count completed in main stats
+            } else {
+                total++;
             }
 
-            const isOverdue = dueDate && dueDate < now;
-            const isHighPrio = task.priority === 'high' || task.priority === 'urgent' || task.priority === 'cao';
+            let dueDate = getTaskDeadline(task);
+
+            const isOverdue = dueDate && dueDate < now && !isCompleted;
+            const isHighPrio = ['high', 'urgent', 'cao'].includes(task.priority);
             const isDueWithin48h = dueDate && dueDate <= next48Hours && dueDate >= now;
 
-            if (isOverdue) overdueCount++;
-            if (isHighPrio) highPrioCount++;
-
-            if (isOverdue || task.alertFlag === true || (isHighPrio && isDueWithin48h)) {
-                attentionList.push(task);
+            if (!isCompleted) {
+                if (isOverdue) overdueCount++;
+                if (isHighPrio) highPrioCount++;
             }
 
+            // Categorization for Task Management tab
+            task._effectiveDeadline = dueDate || new Date(9999, 11, 31);
+
+            if (!isCompleted && (isOverdue || task.alertFlag === true || (isHighPrio && isDueWithin48h))) {
+                attentionList.push(task);
+            } else if (dueDate && dueDate <= endOfWeek && dueDate >= now) {
+                weekList.push(task);
+            } else {
+                otherList.push(task);
+            }
+
+            // Groups for Reports tab
             if (task.assignees) {
                 Object.keys(task.assignees).forEach(uid => {
                     if (!groups[uid]) {
                         groups[uid] = { total: 0, overdue: 0 };
                     }
-                    groups[uid].total++;
+                    if (!isCompleted) groups[uid].total++;
                     if (isOverdue) groups[uid].overdue++;
                 });
             }
         });
 
-        setStats({ total, overdue: overdueCount, highPriority: highPrioCount });
+        const sortByDate = (a, b) => a._effectiveDeadline - b._effectiveDeadline;
+        attentionList.sort(sortByDate);
+        weekList.sort(sortByDate);
+        otherList.sort(sortByDate);
+
+        setStats({ total, overdue: overdueCount, highPriority: highPrioCount, completed: completedCount });
         setNeedsAttention(attentionList);
+        setThisWeek(weekList);
+        setOtherTasks(otherList);
         setAssigneeGroups(groups);
     };
 
-    const handleUserStatusUpdate = async (targetUid, newStatus) => {
-        try {
-            const updates = { status: newStatus };
-            if (newStatus === 'active') {
-                updates.approvedAt = serverTimestamp();
-                updates.approvedBy = currentUser.uid;
-            }
-            await updateDoc(doc(db, "users", targetUid), updates);
-            alert("Cập nhật thành công!");
-            fetchData();
-        } catch (err) {
-            console.error(err);
-            alert("Lỗi: " + err.message);
+    // --- Helper to calculate deadline ---
+    const getTaskDeadline = (task) => {
+        if (!task) return null;
+        if (task.nextDeadline) {
+            return task.nextDeadline?.toDate ? task.nextDeadline.toDate() : new Date(task.nextDeadline);
         }
+        if (task.timeType === 'fixed' || (!task.timeType && task.dueAt)) {
+            if (task.dueAt) {
+                return task.dueAt?.toDate ? task.dueAt.toDate() : new Date(task.dueAt);
+            }
+        }
+        if (task.timeType === 'range' && task.toDate) {
+            return task.toDate?.toDate ? task.toDate.toDate() : new Date(task.toDate);
+        }
+        return null;
     };
 
-    const handleRoleUpdate = async (targetUid, newRole) => {
-        try {
-            await updateDoc(doc(db, "users", targetUid), { role: newRole });
-            alert("Cập nhật quyền thành công!");
-            fetchData();
-        } catch (err) {
-            console.error(err);
-            alert("Lỗi: " + err.message);
-        }
+    const getDeadlineDisplay = (task) => {
+        const d = getTaskDeadline(task);
+        if (!d) return "Chưa thiết lập";
+        return d.toLocaleDateString('vi-VN');
     };
 
     if (loading) return <div>Đang tải dữ liệu quản lý...</div>;
@@ -169,51 +196,113 @@ export default function ManagementDashboard() {
 
     const getUserName = (uid) => {
         const u = userMap[uid];
-        if (!u) return uid;
-        return u.fullName || u.email || uid;
+        if (!u) return uid?.substring(0, 8) || 'N/A';
+        return u.fullName || (u.email && !u.email.endsWith('@task.app') ? u.email : null) || uid.substring(0, 8);
     };
 
-    const isManagerOrAdmin = userProfile.role === 'manager' || userProfile.role === 'admin';
+    const TaskCard = ({ task, color }) => {
+        const isCompleted = task.status === 'completed';
+        // Priority
+        let pColor = '#757575';
+        let pLabel = 'Thấp';
+        if (['high', 'urgent', 'cao'].includes(task.priority)) {
+            pColor = '#b71c1c'; pLabel = 'Cao';
+        } else if (['normal', 'trung bình'].includes(task.priority)) {
+            pColor = '#1565c0'; pLabel = 'Trung bình';
+        }
+        // Status
+        const sColor = isCompleted ? '#2e7d32' : '#ec407a';
+        const sLabel = isCompleted ? 'Hoàn thành' : 'Đang làm';
+
+        // Assignees
+        const assigneeNames = task.assignees ? Object.keys(task.assignees).map(uid => getUserName(uid)).join(', ') : 'N/A';
+        // Supervisors
+        const supervisorNames = task.supervisors ? Object.keys(task.supervisors).map(uid => getUserName(uid)).join(', ') : null;
+
+        return (
+            <li style={{
+                background: isCompleted ? '#e8f5e9' : '#fff',
+                borderLeft: `4px solid ${color}`,
+                padding: '10px',
+                marginBottom: '10px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+            }}>
+                <Link to={`/app/tasks/${task.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '5px', fontSize: '1.05em' }}>{task.title}</div>
+                    <div style={{ fontSize: '0.85em', color: '#555' }}>
+                        <div style={{ marginBottom: '4px' }}>Hạn: {getDeadlineDisplay(task)}</div>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                            {task.priority && (
+                                <span style={{ background: pColor, color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75em', fontWeight: 'bold' }}>{pLabel}</span>
+                            )}
+                            <span style={{ background: sColor, color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75em', fontWeight: 'bold' }}>{sLabel}</span>
+                        </div>
+                        <div style={{ color: '#666', fontSize: '0.8em' }}>
+                            <span style={{ marginRight: '10px' }}>👤 Giao cho: <strong>{assigneeNames}</strong></span>
+                            {supervisorNames && <span>👁️ Giám sát: <strong>{supervisorNames}</strong></span>}
+                        </div>
+                    </div>
+                </Link>
+            </li>
+        );
+    };
+
+    const TaskList = ({ title, items, color }) => (
+        <div style={{ marginBottom: '30px' }}>
+            <h3 style={{ borderBottom: `2px solid ${color}`, paddingBottom: '5px', display: 'inline-block' }}>
+                {title} ({items.length})
+            </h3>
+            {items.length === 0 ? (
+                <p style={{ fontStyle: 'italic', color: '#666' }}>Không có công việc nào.</p>
+            ) : (
+                <ul style={{ listStyle: 'none', padding: 0 }}>
+                    {items.map(task => <TaskCard key={task.id} task={task} color={color} />)}
+                </ul>
+            )}
+        </div>
+    );
 
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h2 style={{ margin: 0 }}>Dashboard Quản Lý</h2>
-                {isManagerOrAdmin && (
-                    <div style={{ display: 'flex', background: '#f0f0f0', borderRadius: '8px', padding: '4px' }}>
-                        <button
-                            onClick={() => setActiveTab('tasks')}
-                            style={{
-                                padding: '8px 16px', border: 'none', borderRadius: '6px',
-                                background: activeTab === 'tasks' ? '#fff' : 'transparent',
-                                boxShadow: activeTab === 'tasks' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-                                cursor: 'pointer', fontWeight: activeTab === 'tasks' ? 'bold' : 'normal'
-                            }}
-                        >
-                            Công việc
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('users')}
-                            style={{
-                                padding: '8px 16px', border: 'none', borderRadius: '6px',
-                                background: activeTab === 'users' ? '#fff' : 'transparent',
-                                boxShadow: activeTab === 'users' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-                                cursor: 'pointer', fontWeight: activeTab === 'users' ? 'bold' : 'normal'
-                            }}
-                        >
-                            Quản lý Nhân sự
-                        </button>
-                    </div>
-                )}
+                <div style={{ display: 'flex', background: '#e0e0e0', borderRadius: '20px', padding: '2px' }}>
+                    <button
+                        onClick={() => setActiveTab('reports')}
+                        style={{
+                            padding: '8px 16px', borderRadius: '18px', border: 'none',
+                            background: activeTab === 'reports' ? '#fff' : 'transparent',
+                            color: activeTab === 'reports' ? '#1976d2' : '#555',
+                            fontWeight: activeTab === 'reports' ? 'bold' : 'normal',
+                            boxShadow: activeTab === 'reports' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                            cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                    >
+                        Báo cáo
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('manage')}
+                        style={{
+                            padding: '8px 16px', borderRadius: '18px', border: 'none',
+                            background: activeTab === 'manage' ? '#fff' : 'transparent',
+                            color: activeTab === 'manage' ? '#2e7d32' : '#555',
+                            fontWeight: activeTab === 'manage' ? 'bold' : 'normal',
+                            boxShadow: activeTab === 'manage' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                            cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                    >
+                        Quản lý Công việc
+                    </button>
+                </div>
             </div>
 
-            {activeTab === 'tasks' ? (
+            {activeTab === 'reports' ? (
                 <>
                     {/* Summary Cards */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', marginBottom: '30px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '30px' }}>
                         <div style={{ background: '#e3f2fd', borderRadius: '8px', textAlign: 'center', padding: '15px' }}>
                             <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#1976d2' }}>{stats.total}</div>
-                            <div>Công việc đang mở</div>
+                            <div>Đang thực hiện</div>
                         </div>
                         <div style={{ background: '#ffebee', borderRadius: '8px', textAlign: 'center', padding: '15px' }}>
                             <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#d32f2f' }}>{stats.overdue}</div>
@@ -223,6 +312,10 @@ export default function ManagementDashboard() {
                             <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#f57c00' }}>{stats.highPriority}</div>
                             <div>Ưu tiên cao</div>
                         </div>
+                        <div style={{ background: '#e8f5e9', borderRadius: '8px', textAlign: 'center', padding: '15px' }}>
+                            <div style={{ fontSize: '2em', fontWeight: 'bold', color: '#2e7d32' }}>{stats.completed}</div>
+                            <div>Đã hoàn thành</div>
+                        </div>
                     </div>
 
                     <div style={{ display: 'flex', gap: '30px' }}>
@@ -230,14 +323,11 @@ export default function ManagementDashboard() {
                             <h3 style={{ borderBottom: '2px solid #d32f2f', display: 'inline-block', marginBottom: '15px' }}>Cần chú ý ({needsAttention.length})</h3>
                             {needsAttention.length === 0 ? <p>Không có.</p> : (
                                 <ul style={{ listStyle: 'none', padding: 0 }}>
-                                    {needsAttention.map(task => (
-                                        <li key={task.id} style={{ marginBottom: '10px', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}>
+                                    {needsAttention.slice(0, 5).map(task => (
+                                        <li key={task.id} style={{ marginBottom: '10px', padding: '10px', border: '1px solid #ddd', borderRadius: '4px', background: '#fff8f8' }}>
                                             <Link to={`/app/tasks/${task.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                                <div style={{ fontWeight: 'bold' }}>{task.title}</div>
-                                                <div style={{ fontSize: '0.85em', color: '#666' }}>
-                                                    {task.priority && <span style={{ color: 'red', marginRight: '5px' }}>[{task.priority}]</span>}
-                                                    {task.dueAt && (task.dueAt.toDate ? task.dueAt.toDate().toLocaleDateString('vi-VN') : new Date(task.dueAt).toLocaleDateString('vi-VN'))}
-                                                </div>
+                                                <div style={{ fontWeight: 'bold' }}>{task.alertFlag && <span style={{ color: 'red' }}>⚠️ </span>}{task.title}</div>
+                                                <div style={{ fontSize: '0.85em', color: '#666', marginTop: '5px' }}>Hạn: {getDeadlineDisplay(task)}</div>
                                             </Link>
                                         </li>
                                     ))}
@@ -268,124 +358,79 @@ export default function ManagementDashboard() {
                     </div>
                 </>
             ) : (
-                <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
-                    <h3>Nhân sự khoa/phòng</h3>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '15px' }}>
-                        <thead style={{ background: '#f5f5f5', textAlign: 'left' }}>
-                            <tr>
-                                <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>Họ tên</th>
-                                <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>Quyền</th>
-                                <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>Trạng thái</th>
-                                <th style={{ padding: '12px', borderBottom: '2px solid #ddd', textAlign: 'right' }}>Hành động</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {deptUsers.map(u => (
-                                <tr key={u.id} style={{ borderBottom: '1px solid #eee' }}>
-                                    <td style={{ padding: '12px' }}>
-                                        <div style={{ fontWeight: 'bold' }}>{u.fullName}</div>
-                                        <div style={{ fontSize: '0.8em', color: '#666' }}>{u.phone}</div>
-                                    </td>
-                                    <td style={{ padding: '12px' }}>
-                                        {(u.status === 'active' && isManagerOrAdmin && u.role !== 'admin' && u.role !== 'manager') ? (
-                                            <select
-                                                value={u.role || 'staff'}
-                                                onChange={(e) => handleRoleUpdate(u.id, e.target.value)}
-                                                style={{ padding: '4px', borderRadius: '4px', border: '1px solid #ccc' }}
-                                            >
-                                                <option value="staff">Nhân viên</option>
-                                                <option value="asigner">Giao việc</option>
-                                            </select>
-                                        ) : (
-                                            <span style={{ fontSize: '0.9em' }}>
-                                                {u.role === 'admin' ? 'Admin' : u.role === 'manager' ? 'Trưởng khoa/phòng' : u.role === 'asigner' ? 'Giao việc' : 'Nhân viên'}
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td style={{ padding: '12px' }}>
-                                        <span style={{
-                                            padding: '4px 8px', borderRadius: '12px', fontSize: '0.8em',
-                                            background: u.status === 'active' ? '#e8f5e9' : u.status === 'pending' ? '#fff3e0' : '#f5f5f5',
-                                            color: u.status === 'active' ? '#2e7d32' : u.status === 'pending' ? '#ef6c00' : '#666'
-                                        }}>
-                                            {u.status === 'active' ? 'Đang hoạt động' : u.status === 'pending' ? 'Chờ duyệt' : u.status === 'delete_request' ? 'Chờ Admin xóa' : u.status}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '12px', textAlign: 'right' }}>
-                                        <button
-                                            onClick={() => setSelectedUser(u)}
-                                            style={{ padding: '5px 10px', background: '#f5f5f5', color: '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}
-                                        >
-                                            Xem
-                                        </button>
+                <>
+                    {/* Filter Tabs - square style aligned left */}
+                    <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid #ddd' }}>
+                        <button
+                            onClick={() => setFilterStatus('open')}
+                            style={{
+                                padding: '10px 20px',
+                                border: 'none',
+                                borderRadius: '4px 4px 0 0',
+                                background: filterStatus === 'open' ? '#1976d2' : 'transparent',
+                                color: filterStatus === 'open' ? '#fff' : '#333',
+                                fontWeight: filterStatus === 'open' ? 'bold' : 'normal',
+                                cursor: 'pointer',
+                                fontSize: '1em'
+                            }}
+                        >Đang làm</button>
+                        <button
+                            onClick={() => setFilterStatus('completed')}
+                            style={{
+                                padding: '10px 20px',
+                                border: 'none',
+                                borderRadius: '4px 4px 0 0',
+                                background: filterStatus === 'completed' ? '#2e7d32' : 'transparent',
+                                color: filterStatus === 'completed' ? '#fff' : '#333',
+                                fontWeight: filterStatus === 'completed' ? 'bold' : 'normal',
+                                cursor: 'pointer',
+                                fontSize: '1em'
+                            }}
+                        >Đã xong</button>
+                        <button
+                            onClick={() => setFilterStatus('all')}
+                            style={{
+                                padding: '10px 20px',
+                                border: 'none',
+                                borderRadius: '4px 4px 0 0',
+                                background: filterStatus === 'all' ? '#555' : 'transparent',
+                                color: filterStatus === 'all' ? '#fff' : '#333',
+                                fontWeight: filterStatus === 'all' ? 'bold' : 'normal',
+                                cursor: 'pointer',
+                                fontSize: '1em'
+                            }}
+                        >Tất cả</button>
+                    </div>
 
-                                        {u.status === 'pending' && (
-                                            <button onClick={() => handleUserStatusUpdate(u.id, 'active')} style={{ padding: '5px 10px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}>Duyệt</button>
-                                        )}
-
-                                        {u.status === 'active' && u.id !== currentUser.uid && u.role !== 'admin' && (
-                                            <button
-                                                onClick={() => {
-                                                    if (window.confirm(`Gửi yêu cầu xóa nhân viên ${u.fullName}?`)) {
-                                                        handleUserStatusUpdate(u.id, 'delete_request');
-                                                    }
-                                                }}
-                                                style={{ padding: '5px 10px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                                            >
-                                                Xóa
-                                            </button>
-                                        )}
-                                        {u.status === 'delete_request' && (
-                                            <button onClick={() => handleUserStatusUpdate(u.id, 'active')} style={{ padding: '5px 10px', background: '#757575', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Hủy YC Xóa</button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {/* User Detail Modal */}
-            {selectedUser && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div style={{ background: '#fff', padding: '30px', borderRadius: '8px', maxWidth: '500px', width: '90%', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-                        <h3 style={{ marginTop: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Chi tiết nhân sự</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', marginTop: '20px' }}>
-                            <div style={{ fontWeight: 'bold' }}>Họ tên:</div>
-                            <div>{selectedUser.fullName}</div>
-
-                            <div style={{ fontWeight: 'bold' }}>Số điện thoại:</div>
-                            <div>{selectedUser.phone}</div>
-
-                            <div style={{ fontWeight: 'bold' }}>Email:</div>
-                            <div>{selectedUser.email || 'N/A'}</div>
-
-                            <div style={{ fontWeight: 'bold' }}>Vị trí:</div>
-                            <div>{selectedUser.position}</div>
-
-                            <div style={{ fontWeight: 'bold' }}>Quyền hạn:</div>
-                            <div>{selectedUser.role === 'admin' ? 'Admin' : selectedUser.role === 'manager' ? 'Trưởng khoa/phòng' : selectedUser.role === 'asigner' ? 'Giao việc' : 'Nhân viên'}</div>
-
-                            <div style={{ fontWeight: 'bold' }}>Trạng thái:</div>
-                            <div>{selectedUser.status}</div>
-
-                            <div style={{ fontWeight: 'bold' }}>Ngày tham gia:</div>
-                            <div>{selectedUser.createdAt?.toDate ? selectedUser.createdAt.toDate().toLocaleDateString('vi-VN') : 'N/A'}</div>
-
-                            <div style={{ fontWeight: 'bold' }}>Duyệt bởi:</div>
-                            <div>{getUserName(selectedUser.approvedBy) || 'N/A'}</div>
-                        </div>
-                        <div style={{ marginTop: '30px', textAlign: 'right' }}>
-                            <button
-                                onClick={() => setSelectedUser(null)}
-                                style={{ padding: '8px 20px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                            >
-                                Đóng
-                            </button>
+                    {/* Content area with border */}
+                    <div style={{ border: '1px solid #ddd', borderTop: 'none', padding: '20px', background: '#fafafa' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+                            <TaskList
+                                title="Cần Chú Ý"
+                                items={filterStatus === 'completed' ? [] : needsAttention.filter(t => filterStatus === 'all' || t.status !== 'completed')}
+                                color="#d32f2f"
+                            />
+                            <TaskList
+                                title="Trong Tuần Này"
+                                items={thisWeek.filter(t => {
+                                    if (filterStatus === 'all') return true;
+                                    if (filterStatus === 'completed') return t.status === 'completed';
+                                    return t.status !== 'completed';
+                                })}
+                                color="#1976d2"
+                            />
+                            <TaskList
+                                title="Công Việc Khác"
+                                items={otherTasks.filter(t => {
+                                    if (filterStatus === 'all') return true;
+                                    if (filterStatus === 'completed') return t.status === 'completed';
+                                    return t.status !== 'completed';
+                                })}
+                                color="#388e3c"
+                            />
                         </div>
                     </div>
-                </div>
+                </>
             )}
         </div>
     );

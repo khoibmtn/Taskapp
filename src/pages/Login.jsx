@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "../firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { auth, db } from "../firebase";
 import { useNavigate, Link } from "react-router-dom";
 
 export default function Login() {
@@ -27,11 +28,31 @@ export default function Login() {
 
         let loginEmail = identifier.trim();
 
-        // If identifier looks like a phone (mostly digits), normalize it and append @task.app
+        // 1. Logic for phone or real email lookup
         const digitsOnly = loginEmail.replace(/\D/g, '');
-        if (digitsOnly.length >= 8 && !loginEmail.includes('@')) {
+        const isPotentialPhone = digitsOnly.length >= 8 && !loginEmail.includes('@');
+
+        if (isPotentialPhone) {
             const normalized = normalizePhone(digitsOnly);
             loginEmail = `${normalized}@task.app`;
+        } else if (loginEmail.includes('@') && !loginEmail.endsWith('@task.app')) {
+            // It's a real email, look up the authEmail in Firestore
+            try {
+                const q = query(collection(db, "users"), where("email", "==", loginEmail));
+                const querySnapshot = await getDocs(q);
+                if (querySnapshot.empty) {
+                    setError("Email này chưa được đăng ký trong hệ thống.");
+                    setLoading(false);
+                    return;
+                }
+                // Use the authEmail stored in the user document
+                loginEmail = querySnapshot.docs[0].data().authEmail;
+            } catch (err) {
+                console.error("Error looking up email:", err);
+                setError("Lỗi khi kiểm tra tài khoản: " + err.message);
+                setLoading(false);
+                return;
+            }
         }
 
         const paddedPassword = padPassword(password);
