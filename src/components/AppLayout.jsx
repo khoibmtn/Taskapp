@@ -3,6 +3,7 @@ import { Outlet, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { auth, db } from "../firebase";
 import { doc, getDoc, getDocs, collection } from "firebase/firestore";
+import NotificationDropdown from "./NotificationDropdown";
 
 export default function AppLayout() {
     const { userProfile, switchDepartment } = useAuth();
@@ -78,6 +79,8 @@ export default function AppLayout() {
                         </div>
                     )}
                     <div style={{ borderLeft: '1px solid #ccc', height: '20px' }}></div>
+                    <NotificationDropdown />
+                    <div style={{ borderLeft: '1px solid #ccc', height: '20px' }}></div>
                     <span>Xin chào, <strong>{userProfile?.fullName || 'User'}</strong></span>
                     <button
                         onClick={handleLogout}
@@ -129,9 +132,6 @@ export default function AppLayout() {
                         )}
                         <li style={{ marginBottom: '10px' }}>
                             <Link to="/app/settings" style={{ textDecoration: 'none', color: '#333' }}>Cài đặt</Link>
-                        </li>
-                        <li style={{ marginBottom: '10px' }}>
-                            <Link to="/app/notifications" style={{ textDecoration: 'none', color: '#333' }}>Thông báo</Link>
                         </li>
                     </ul>
                 </nav>

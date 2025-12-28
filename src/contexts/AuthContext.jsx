@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
                 const token = await getToken(messaging, {
-                    vapidKey: "BEn6T4S9r_x2rLWxk7M8e3A9d6F2J2L2K2M2N2P2Q2R2S2T2U2V2W2X2Y2Z" // Note: Real VAPID needed if using custom key, but often default works for basic setup
+                    vapidKey: "k14r2fKDxdc2d4LRRbFU06kN-rpn7bEg5K8ukPnp750" // Note: Real VAPID needed if using custom key, but often default works for basic setup
                 });
 
                 if (token) {

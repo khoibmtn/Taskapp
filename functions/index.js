@@ -17,6 +17,9 @@ async function sendNotificationToUser(uid, payload, taskId) {
         // 1. Lưu vào collection 'notifications' (In-app)
         await db.collection("notifications").add({
             toUid: uid,
+            fromUid: payload.fromUid || "system",
+            fromName: payload.fromName || "Hệ thống",
+            fromAvatar: payload.fromAvatar || "",
             taskId: taskId || "",
             type: payload.type || "system",
             title: payload.title,
@@ -64,10 +67,17 @@ exports.onTaskCreated = onDocumentCreated("tasks/{taskId}", async (event) => {
     const taskTitle = taskData.title;
     const deptId = taskData.departmentId;
 
+    const creatorDoc = await db.collection("users").doc(taskData.createdBy).get();
+    const creatorName = creatorDoc.exists ? (creatorDoc.data().fullName || "Ai đó") : "Ai đó";
+    const creatorAvatar = creatorDoc.exists ? (creatorDoc.data().photoURL || "") : "";
+
     const payload = {
         type: "task_created",
+        fromUid: taskData.createdBy,
+        fromName: creatorName,
+        fromAvatar: creatorAvatar,
         title: "Có công việc mới",
-        body: `Bạn được giao công việc: ${taskTitle}`
+        body: `${creatorName} vừa giao việc "${taskTitle}" cho bạn.`
     };
 
     // 1. Tìm tất cả Admin
@@ -124,8 +134,11 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
 
                 const payload = {
                     type: "task_request_done",
-                    title: "Đề nghị hoàn thành công việc",
-                    body: `${userName} đã đề nghị hoàn thành: ${taskTitle}`
+                    fromUid: uid,
+                    fromName: userName,
+                    fromAvatar: userDoc.exists ? (userDoc.data().photoURL || "") : "",
+                    title: "Đề nghị hoàn thành",
+                    body: `${userName} vừa báo cáo đã hoàn thành công việc "${taskTitle}", bạn hãy xác nhận nhé.`
                 };
 
                 // Gửi cho Manager khoa phòng & Admin
@@ -143,10 +156,14 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
 
             // Case 2: Manager Duyệt (pending -> approved)
             if (newStatus === "approved") {
+                const approverUid = afterData.approvedBy || afterData.updatedBy || ""; // Ideally we track who updated it
+                // We'll use a generic "Quản lý" if we don't have the specific approver UID easily
                 notificationPromises.push(sendNotificationToUser(uid, {
                     type: "task_approved",
-                    title: "Công việc đã được DUYỆT",
-                    body: `Công việc "${taskTitle}" của bạn đã được quản lý phê duyệt.`
+                    fromUid: "system",
+                    fromName: "Quản lý",
+                    title: "Công việc được DUYỆT",
+                    body: `Chúc mừng! Công việc "${taskTitle}" của bạn đã được quản lý phê duyệt.`
                 }, taskId));
 
                 // Gửi cho Admin biết
