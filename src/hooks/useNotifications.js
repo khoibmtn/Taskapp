@@ -25,7 +25,18 @@ export function useNotifications() {
         const unsubscribe = onSnapshot(q, (snap) => {
             const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             setNotifications(list);
-            setUnreadCount(list.filter(n => !n.isRead).length);
+            
+            const newUnreadCount = list.filter(n => !n.isRead).length;
+            setUnreadCount(newUnreadCount);
+            
+            // Sync with native OS App Icon Badge (PWA)
+            if ('setAppBadge' in navigator) {
+                if (newUnreadCount > 0) {
+                    navigator.setAppBadge(newUnreadCount).catch(console.warn);
+                } else {
+                    navigator.clearAppBadge().catch(console.warn);
+                }
+            }
         }, (err) => {
             console.warn("Notifications listener error:", err);
         });
