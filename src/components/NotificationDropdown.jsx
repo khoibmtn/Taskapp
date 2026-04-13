@@ -1,37 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../firebase';
-import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc, writeBatch } from 'firebase/firestore';
-import { useAuth } from '../contexts/AuthContext';
 import { Bell, CheckCheck, User } from 'lucide-react';
 
-export default function NotificationDropdown() {
-    const { currentUser } = useAuth();
+/**
+ * Notification dropdown — receives data from useNotifications hook via props.
+ */
+export default function NotificationDropdown({ notifications, unreadCount, markAllAsRead, markOneAsRead }) {
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
-    const [notifications, setNotifications] = useState([]);
-    const [unreadCount, setUnreadCount] = useState(0);
     const [activeTab, setActiveTab] = useState('all');
     const dropdownRef = useRef(null);
-
-    useEffect(() => {
-        if (!currentUser) return;
-
-        const q = query(
-            collection(db, "notifications"),
-            where("toUid", "==", currentUser.uid),
-            orderBy("createdAt", "desc"),
-            limit(10)
-        );
-
-        const unsubscribe = onSnapshot(q, (snap) => {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setNotifications(list);
-            setUnreadCount(list.filter(n => !n.isRead).length);
-        });
-
-        return () => unsubscribe();
-    }, [currentUser]);
 
     useEffect(() => {
         function handleClickOutside(event) {
@@ -43,26 +21,23 @@ export default function NotificationDropdown() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // Mark all as read when opening dropdown
+    const handleToggle = () => {
+        const willOpen = !isOpen;
+        setIsOpen(willOpen);
+        if (willOpen && unreadCount > 0) {
+            markAllAsRead();
+        }
+    };
+
     const handleNotifClick = async (notif) => {
         if (!notif.isRead) {
-            await updateDoc(doc(db, "notifications", notif.id), { isRead: true });
+            markOneAsRead(notif.id);
         }
         setIsOpen(false);
         if (notif.taskId) {
             navigate(`/app/tasks/${notif.taskId}`);
         }
-    };
-
-    const markAllAsRead = async () => {
-        if (!currentUser) return;
-        const unreadItems = notifications.filter(n => !n.isRead);
-        if (unreadItems.length === 0) return;
-
-        const batch = writeBatch(db);
-        unreadItems.forEach(n => {
-            batch.update(doc(db, "notifications", n.id), { isRead: true });
-        });
-        await batch.commit();
     };
 
     const filteredNotifications = activeTab === 'unread'
@@ -73,7 +48,7 @@ export default function NotificationDropdown() {
         <div className="relative" ref={dropdownRef}>
             {/* Bell Button */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={handleToggle}
                 className={`relative p-2 rounded-lg transition-colors ${
                     isOpen ? 'bg-primary-50 text-primary-600' : 'text-gray-500 hover:bg-gray-100'
                 }`}
@@ -93,7 +68,7 @@ export default function NotificationDropdown() {
                     <div className="p-4 border-b border-gray-100">
                         <div className="flex items-center justify-between mb-3">
                             <h3 className="font-heading font-bold text-lg text-gray-900">Thông báo</h3>
-                            {unreadCount > 0 && (
+                            {notifications.filter(n => !n.isRead).length > 0 && (
                                 <button
                                     onClick={markAllAsRead}
                                     className="flex items-center gap-1 text-sm text-primary-600 hover:bg-primary-50 px-2 py-1 rounded-lg transition-colors"
