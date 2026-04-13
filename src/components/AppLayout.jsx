@@ -9,6 +9,7 @@ import {
     LayoutDashboard, BarChart3, PlusCircle, ClipboardList,
     Users, Shield, Settings, Menu, X, LogOut, ClipboardCheck
 } from "lucide-react";
+import FirebaseDropdown from "./FirebaseDropdown";
 
 const SIDEBAR_ITEMS = [
     { to: "/app", icon: LayoutDashboard, label: "Dashboard", roles: null },
@@ -145,15 +146,12 @@ export default function AppLayout() {
                 {myDepartments.length > 0 && (
                     <div className="px-4 py-3 border-b border-gray-100">
                         {myDepartments.length > 1 ? (
-                            <select
+                            <FirebaseDropdown
                                 value={userProfile?.selectedDepartmentId}
-                                onChange={(e) => switchDepartment(e.target.value)}
-                                className="w-full text-sm font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg px-3 py-2 focus-ring"
-                            >
-                                {myDepartments.map(d => (
-                                    <option key={d.id} value={d.id}>{d.name}</option>
-                                ))}
-                            </select>
+                                options={myDepartments.map(d => ({ value: d.id, label: d.name }))}
+                                onChange={(val) => switchDepartment(val)}
+                                className="w-full"
+                            />
                         ) : (
                             <div className="text-sm text-gray-500">
                                 <span className="text-xs text-gray-400">Khoa/Phòng</span>

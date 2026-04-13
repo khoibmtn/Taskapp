@@ -5,6 +5,7 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import { Search, Plus, Loader2, X, KeyRound, Eye, Check, XCircle, Ban, RotateCcw } from "lucide-react";
+import FirebaseDropdown from "../../components/FirebaseDropdown";
 
 export default function AdminManagement() {
     const { userProfile, currentUser } = useAuth();
@@ -295,14 +296,14 @@ export default function AdminManagement() {
                                     </td>
                                     <td className="px-4 py-3 text-sm">
                                         {(u.status === 'active' && isManagerOrAdmin && u.role !== 'admin' && u.role !== 'manager') ? (
-                                            <select
+                                            <FirebaseDropdown
                                                 value={u.role || 'staff'}
-                                                onChange={(e) => handleRoleUpdate(u.id, e.target.value)}
-                                                className="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                                            >
-                                                <option value="staff">Nhân viên</option>
-                                                <option value="asigner">Giao việc</option>
-                                            </select>
+                                                options={[
+                                                    { value: 'staff', label: 'Nhân viên' },
+                                                    { value: 'asigner', label: 'Giao việc' },
+                                                ]}
+                                                onChange={(val) => handleRoleUpdate(u.id, val)}
+                                            />
                                         ) : (
                                             <span className="text-gray-600">{ROLE_LABELS[u.role] || u.role}</span>
                                         )}
