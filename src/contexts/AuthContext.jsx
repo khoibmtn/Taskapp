@@ -11,7 +11,7 @@ export function useAuth() {
     return useContext(AuthContext);
 }
 
-const VAPID_KEY = "BDd2-vXy8G2Kj2G_2_0_q_w_u_v_x_y_z_0_1_2_3_4_5_6_7_8_9_A_B_C_D_E_F"; // Placeholder VAPID key
+const VAPID_KEY = "BDqNpCBZA1DPpuQUNVVjpV5PPBv21uugmcWUs2gWzfWL7lpqJarIDsrlmDdUcd--jnh1SeYkXBe-pWHjEs6Xi-w";
 
 export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
@@ -25,7 +25,7 @@ export function AuthProvider({ children }) {
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
                 const token = await getToken(messaging, {
-                    vapidKey: "k14r2fKDxdc2d4LRRbFU06kN-rpn7bEg5K8ukPnp750" // Note: Real VAPID needed if using custom key, but often default works for basic setup
+                    vapidKey: VAPID_KEY
                 });
 
                 if (token) {
