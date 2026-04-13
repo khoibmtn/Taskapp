@@ -12,45 +12,64 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Firebase SDK background handler
 messaging.onBackgroundMessage((payload) => {
-    console.log('[firebase-messaging-sw.js] Received background message ', payload);
-
-    const notificationTitle = payload.notification?.title || 'TaskApp';
-    const notificationOptions = {
-        body: payload.notification?.body || 'Bạn có thông báo mới',
-        icon: '/logo192.png',
-        badge: '/logo192.png',
-        tag: 'taskapp-notification',
-        renotify: true,
-        vibrate: [200, 100, 200],
-        data: {
-            url: payload.data?.url || '/app',
-            taskId: payload.data?.taskId || ''
-        },
-        actions: [
-            { action: 'open', title: 'Mở ứng dụng' }
-        ]
-    };
-
-    self.registration.showNotification(notificationTitle, notificationOptions);
+    console.log('[SW] Firebase background message:', payload);
+    // Firebase SDK auto-shows notification from payload.notification
+    // Only need manual show if using data-only messages
 });
 
-// Handle notification click — open the app
+// Direct push event handler — critical for iOS PWA
+// iOS Safari may not trigger onBackgroundMessage but does fire 'push' event
+self.addEventListener('push', (event) => {
+    if (!event.data) return;
+
+    let data;
+    try {
+        data = event.data.json();
+    } catch (e) {
+        data = { notification: { title: 'TaskApp', body: event.data.text() } };
+    }
+
+    // Skip if Firebase SDK already handled it (check if notification is auto-shown)
+    const notif = data.notification || {};
+    const title = notif.title || 'TaskApp';
+    const options = {
+        body: notif.body || 'Bạn có thông báo mới',
+        icon: '/logo192.png',
+        badge: '/logo192.png',
+        tag: data.data?.taskId || 'taskapp-general',
+        renotify: true,
+        vibrate: [200, 100, 200],
+        requireInteraction: true,
+        data: {
+            url: data.fcmOptions?.link || data.data?.url || '/app'
+        }
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(title, options)
+    );
+});
+
+// Handle notification click — open/focus the app
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
 
     const url = event.notification.data?.url || '/app';
+    const fullUrl = new URL(url, self.location.origin).href;
 
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            // If app is already open, focus it
+            // Focus existing window if found
             for (const client of clientList) {
                 if (client.url.includes(self.location.origin) && 'focus' in client) {
+                    client.navigate(fullUrl);
                     return client.focus();
                 }
             }
-            // Otherwise open a new window
-            return clients.openWindow(url);
+            // Open new window
+            return clients.openWindow(fullUrl);
         })
     );
 });

@@ -46,15 +46,46 @@ async function sendNotificationToUser(uid, payload, taskId) {
                 },
                 tokens: tokens,
                 webpush: {
+                    headers: {
+                        Urgency: "high",
+                        TTL: "86400"
+                    },
                     notification: {
                         icon: "/logo192.png",
-                        click_action: `/app/tasks/${taskId}`
+                        badge: "/logo192.png",
+                        vibrate: [200, 100, 200],
+                        renotify: true,
+                        tag: taskId || "general",
+                        requireInteraction: true
+                    },
+                    fcm_options: {
+                        link: taskId ? `/app/tasks/${taskId}` : "/app"
                     }
                 }
             };
 
             const response = await fcm.sendEachForMulticast(message);
-            console.log(`Successfully sent ${response.successCount} messages to ${uid}`);
+            console.log(`Sent ${response.successCount}/${tokens.length} messages to ${uid}`);
+
+            // Clean up invalid tokens
+            const invalidTokens = [];
+            response.responses.forEach((resp, idx) => {
+                if (!resp.success) {
+                    const code = resp.error?.code;
+                    if (code === "messaging/invalid-registration-token" ||
+                        code === "messaging/registration-token-not-registered") {
+                        invalidTokens.push(tokens[idx]);
+                    }
+                }
+            });
+
+            if (invalidTokens.length > 0) {
+                const { FieldValue } = require("firebase-admin/firestore");
+                await taskDb.collection("users").doc(uid).update({
+                    fcmTokens: FieldValue.arrayRemove(...invalidTokens)
+                });
+                console.log(`Removed ${invalidTokens.length} invalid tokens for ${uid}`);
+            }
         }
     } catch (error) {
         console.error(`Error sending notification to ${uid}:`, error);
