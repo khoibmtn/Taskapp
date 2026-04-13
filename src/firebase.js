@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
-import { getMessaging } from "firebase/messaging";
+import { getMessaging, isSupported } from "firebase/messaging";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCo_PfvtnCLxqhD1IX3Aqs8l06UmMvzvAs",
@@ -31,6 +31,21 @@ enableIndexedDbPersistence(db).catch((err) => {
     }
 });
 
-const messaging = getMessaging(app);
+// Messaging — lazy init, null on unsupported browsers (iOS Safari, etc.)
+let messaging = null;
 
-export { auth, db, messaging };
+async function initMessaging() {
+    try {
+        const supported = await isSupported();
+        if (supported) {
+            messaging = getMessaging(app);
+        }
+    } catch (e) {
+        console.warn("FCM not supported on this browser:", e);
+    }
+}
+
+// Start init but don't block app load
+const messagingReady = initMessaging();
+
+export { auth, db, messaging, messagingReady };
