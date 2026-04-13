@@ -3,6 +3,7 @@ import { auth, db, messaging } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
+import { playNotificationSound } from "../utils/notificationSound";
 
 const AuthContext = createContext();
 
@@ -136,12 +137,10 @@ export function AuthProvider({ children }) {
                 });
             }
 
-            // 2. Play a subtle sound (Optional, but good for UX)
-            // const audio = new Audio('/notification.mp3'); 
-            // audio.play().catch(e => console.log('Audio play failed', e));
+            // 2. Play notification sound
+            playNotificationSound();
 
             // Note: UI updates happen automatically via Firestore onSnapshot listeners
-            // which are already implemented in dashboards.
         });
 
         return () => {

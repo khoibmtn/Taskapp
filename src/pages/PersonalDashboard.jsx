@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { collection, query, where, getDocs, onSnapshot, limit, startAfter } from "firebase/firestore";
+import { collection, query, where, getDocs, onSnapshot, limit, startAfter, writeBatch, doc as firestoreDoc } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../firebase";
 import { getTasksQuery, getTaskCount } from "../utils/queryUtils";
@@ -19,6 +19,43 @@ export default function PersonalDashboard() {
     const [filterStatus, setFilterStatus] = useState('open');
 
     const PAGE_SIZE = 20;
+
+    // Mark open tasks as "seen" by this user when visiting Dashboard
+    useEffect(() => {
+        if (!currentUser?.uid) return;
+        const markTasksAsSeen = async () => {
+            try {
+                const q = query(
+                    collection(db, "tasks"),
+                    where("assigneeUids", "array-contains", currentUser.uid),
+                    where("status", "==", "open"),
+                    where("isRecurringTemplate", "==", false)
+                );
+                const snap = await getDocs(q);
+                const batch = writeBatch(db);
+                let batchCount = 0;
+
+                snap.forEach(docSnap => {
+                    const data = docSnap.data();
+                    const seenBy = data.seenBy || {};
+                    if (!seenBy[currentUser.uid]) {
+                        batch.update(firestoreDoc(db, "tasks", docSnap.id), {
+                            [`seenBy.${currentUser.uid}`]: true
+                        });
+                        batchCount++;
+                    }
+                });
+
+                if (batchCount > 0) {
+                    await batch.commit();
+                }
+            } catch (err) {
+                // Non-critical, silently fail
+                console.warn("Mark seen error:", err);
+            }
+        };
+        markTasksAsSeen();
+    }, [currentUser?.uid]);
 
     // Fetch counts for tabs
     useEffect(() => {

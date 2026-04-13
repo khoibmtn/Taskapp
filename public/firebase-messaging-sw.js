@@ -14,11 +14,43 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
     console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    const notificationTitle = payload.notification.title;
+
+    const notificationTitle = payload.notification?.title || 'TaskApp';
     const notificationOptions = {
-        body: payload.notification.body,
-        icon: '/logo192.png'
+        body: payload.notification?.body || 'Bạn có thông báo mới',
+        icon: '/logo192.png',
+        badge: '/logo192.png',
+        tag: 'taskapp-notification',
+        renotify: true,
+        vibrate: [200, 100, 200],
+        data: {
+            url: payload.data?.url || '/app',
+            taskId: payload.data?.taskId || ''
+        },
+        actions: [
+            { action: 'open', title: 'Mở ứng dụng' }
+        ]
     };
 
     self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// Handle notification click — open the app
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+
+    const url = event.notification.data?.url || '/app';
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            // If app is already open, focus it
+            for (const client of clientList) {
+                if (client.url.includes(self.location.origin) && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            // Otherwise open a new window
+            return clients.openWindow(url);
+        })
+    );
 });

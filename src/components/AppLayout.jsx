@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { auth, db } from "../firebase";
-import { doc, getDoc, getDocs, collection } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, query, where, onSnapshot } from "firebase/firestore";
 import NotificationDropdown from "./NotificationDropdown";
 import BottomNav from "./BottomNav";
 import {
@@ -21,11 +21,39 @@ const SIDEBAR_ITEMS = [
 ];
 
 export default function AppLayout() {
-    const { userProfile, switchDepartment } = useAuth();
+    const { currentUser, userProfile, switchDepartment } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [myDepartments, setMyDepartments] = useState([]);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [newTaskCount, setNewTaskCount] = useState(0);
+
+    // Listen for new tasks assigned to current user (open, not seen)
+    useEffect(() => {
+        if (!currentUser?.uid) return;
+
+        const q = query(
+            collection(db, "tasks"),
+            where("assigneeUids", "array-contains", currentUser.uid),
+            where("status", "==", "open"),
+            where("isRecurringTemplate", "==", false)
+        );
+
+        const unsub = onSnapshot(q, (snap) => {
+            // Count tasks not yet seen by this user
+            let count = 0;
+            snap.forEach(doc => {
+                const data = doc.data();
+                const seenBy = data.seenBy || {};
+                if (!seenBy[currentUser.uid]) {
+                    count++;
+                }
+            });
+            setNewTaskCount(count);
+        });
+
+        return () => unsub();
+    }, [currentUser?.uid]);
 
     // Listen for toggle-sidebar event from BottomNav
     useEffect(() => {
@@ -155,7 +183,12 @@ export default function AppLayout() {
                             `}
                         >
                             <Icon className="w-5 h-5 flex-shrink-0" />
-                            {label}
+                            <span className="flex-1 text-left">{label}</span>
+                            {to === '/app' && newTaskCount > 0 && (
+                                <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center animate-pulse">
+                                    {newTaskCount > 99 ? '99+' : newTaskCount}
+                                </span>
+                            )}
                         </button>
                     ))}
                 </nav>
