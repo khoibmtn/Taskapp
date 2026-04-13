@@ -22,8 +22,8 @@ const updateSW = registerSW({
   },
 })
 
-// Register Firebase Messaging Service Worker (separate, for push notifications)
-if ('serviceWorker' in navigator) {
+// Register Firebase Messaging Service Worker — only on browsers with Push support
+if ('serviceWorker' in navigator && 'PushManager' in window) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/firebase-messaging-sw.js')
       .then(reg => console.log('FCM Service Worker registered', reg))

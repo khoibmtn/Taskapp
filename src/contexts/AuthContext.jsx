@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { auth, db, messagingReady } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp, onSnapshot } from "firebase/firestore";
-import { getToken, onMessage } from "firebase/messaging";
 import { playNotificationSound } from "../utils/notificationSound";
 
 const AuthContext = createContext();
@@ -19,29 +18,25 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // FCM Registration — safe, only runs if messaging is supported
+    // FCM Registration — fully lazy, safe on all browsers
     const setupNotifications = async (uid) => {
         try {
-            // Wait for messaging to finish initializing
             await messagingReady;
-
-            // Dynamic import to get the current messaging instance
             const { messaging } = await import("../firebase");
             if (!messaging) return;
-
             if (!('Notification' in window)) return;
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-                const token = await getToken(messaging, {
-                    vapidKey: VAPID_KEY
-                });
 
-                if (token) {
-                    console.log("FCM Token:", token);
-                    await updateDoc(doc(db, "users", uid), {
-                        fcmTokens: arrayUnion(token)
-                    });
-                }
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') return;
+
+            // Dynamic import firebase/messaging — never loaded on unsupported browsers
+            const { getToken } = await import("firebase/messaging");
+            const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+
+            if (token) {
+                await updateDoc(doc(db, "users", uid), {
+                    fcmTokens: arrayUnion(token)
+                });
             }
         } catch (err) {
             console.warn("FCM registration failed:", err);
@@ -72,7 +67,6 @@ export function AuthProvider({ children }) {
             if (user) {
                 const docRef = doc(db, "users", user.uid);
 
-                // 1. One-time fetch for migration logic
                 try {
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists()) {
@@ -94,9 +88,9 @@ export function AuthProvider({ children }) {
                             };
                             await updateDoc(docRef, updates);
                         }
+                        // Non-blocking — don't await
                         setupNotifications(user.uid);
                     } else {
-                        // Create basic profile if missing
                         const initialProfile = {
                             fullName: user.displayName || user.email?.split('@')[0] || "New User",
                             email: user.email,
@@ -112,7 +106,6 @@ export function AuthProvider({ children }) {
                     console.error("Migration/Setup error:", err);
                 }
 
-                // 2. Start real-time listener for profile
                 unsubscribeProfile = onSnapshot(docRef, (snap) => {
                     if (snap.exists()) {
                         setUserProfile(snap.data());
@@ -133,30 +126,28 @@ export function AuthProvider({ children }) {
             }
         });
 
-        // Listen for foreground messages — only if messaging is supported
-        const setupMessagingListener = async () => {
+        // Foreground message listener — fully lazy
+        const setupForegroundListener = async () => {
             try {
                 await messagingReady;
                 const { messaging } = await import("../firebase");
                 if (!messaging) return;
 
+                const { onMessage } = await import("firebase/messaging");
                 unsubscribeMessaging = onMessage(messaging, (payload) => {
-                    console.log('Message received in foreground: ', payload);
-
                     if ('Notification' in window && Notification.permission === 'granted') {
-                        new Notification(payload.notification.title, {
-                            body: payload.notification.body,
+                        new Notification(payload.notification?.title || 'Thông báo', {
+                            body: payload.notification?.body || '',
                             icon: '/logo192.png'
                         });
                     }
-
                     playNotificationSound();
                 });
             } catch (err) {
-                console.warn("Foreground message listener failed:", err);
+                // Non-critical
             }
         };
-        setupMessagingListener();
+        setupForegroundListener();
 
         return () => {
             unsubscribeAuth();

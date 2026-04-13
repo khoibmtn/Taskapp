@@ -26,6 +26,8 @@ export function useNotifications() {
             const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             setNotifications(list);
             setUnreadCount(list.filter(n => !n.isRead).length);
+        }, (err) => {
+            console.warn("Notifications listener error:", err);
         });
 
         return () => unsubscribe();

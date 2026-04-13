@@ -1,7 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
-import { getMessaging, isSupported } from "firebase/messaging";
+import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCo_PfvtnCLxqhD1IX3Aqs8l06UmMvzvAs",
@@ -13,39 +12,28 @@ const firebaseConfig = {
     measurementId: "G-12JWTWD1BG"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-
-// Initialize services
 const auth = getAuth(app);
 
-// Use standard WebSockets for speed, but connect to 'taskapp' database
+// Named database 'taskapp' — simple, reliable init
 const db = getFirestore(app, "taskapp");
 
-// Enable offline persistence for Firestore
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-        console.warn('Offline persistence: Multiple tabs open, persistence enabled in first tab only.');
-    } else if (err.code === 'unimplemented') {
-        console.warn('Offline persistence: Browser does not support IndexedDB.');
-    }
-});
-
-// Messaging — lazy init, null on unsupported browsers (iOS Safari, etc.)
+// Messaging — fully lazy loaded via dynamic import
+// firebase/messaging module can crash on import in iOS Safari / unsupported browsers
 let messaging = null;
 
 async function initMessaging() {
     try {
-        const supported = await isSupported();
+        const mod = await import("firebase/messaging");
+        const supported = await mod.isSupported();
         if (supported) {
-            messaging = getMessaging(app);
+            messaging = mod.getMessaging(app);
         }
     } catch (e) {
-        console.warn("FCM not supported on this browser:", e);
+        // Silently fail — messaging is optional
     }
 }
 
-// Start init but don't block app load
 const messagingReady = initMessaging();
 
-export { auth, db, messaging, messagingReady };
+export { app, auth, db, messaging, messagingReady };
