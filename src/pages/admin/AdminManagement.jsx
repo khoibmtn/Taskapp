@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, onSnapshot, writeBatch, getCountFromServer } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
+import { Search, Plus, Loader2, X, KeyRound, Eye, Check, XCircle, Ban, RotateCcw } from "lucide-react";
 
 export default function AdminManagement() {
     const { userProfile, currentUser } = useAuth();
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState("personnel"); // "personnel", "users", "departments"
+    const [activeTab, setActiveTab] = useState("personnel");
+    const [resettingUid, setResettingUid] = useState(null);
+    const [searchQuery, setSearchQuery] = useState("");
 
     // --- Personnel Management State ---
     const [deptUsers, setDeptUsers] = useState([]);
@@ -16,7 +20,7 @@ export default function AdminManagement() {
     const [userMap, setUserMap] = useState({});
 
     // --- User Approval State ---
-    const [statusTab, setStatusTab] = useState("pending");
+    const [statusTab, setStatusTab] = useState("active");
     const [allUsers, setAllUsers] = useState([]);
     const [usersLoading, setUsersLoading] = useState(false);
     const [departmentMap, setDepartmentMap] = useState({});
@@ -50,6 +54,12 @@ export default function AdminManagement() {
         { id: 'delete_request', label: 'YC Xóa' },
         { id: 'rejected', label: 'Từ chối' },
         { id: 'inactive', label: 'Ngừng HĐ' }
+    ];
+
+    const mainTabs = [
+        { id: 'personnel', label: 'Nhân sự', count: deptUsers.length },
+        { id: 'users', label: 'Người dùng', count: Object.values(statusCounts).reduce((a, b) => a + b, 0) },
+        { id: 'departments', label: 'Khoa phòng', count: departments.length },
     ];
 
     // --- Fetch Personnel (real-time) ---
@@ -209,128 +219,258 @@ export default function AdminManagement() {
         return u.fullName || (u.email && !u.email.endsWith('@task.app') ? u.email : null) || uid.substring(0, 8);
     };
 
-    const getStatusLabel = (s) => {
-        switch (s) {
-            case 'pending': return <span style={{ color: 'orange' }}>Chờ duyệt</span>;
-            case 'reject_request': return <span style={{ color: 'red', fontWeight: 'bold' }}>YC Từ chối</span>;
-            case 'active': return <span style={{ color: 'green' }}>Hoạt động</span>;
-            case 'delete_request': return <span style={{ color: 'red', fontWeight: 'bold' }}>YC Xóa</span>;
-            case 'rejected': return <span style={{ color: 'red' }}>Từ chối</span>;
-            case 'inactive': return <span style={{ color: '#757575' }}>Ngừng HĐ</span>;
-            default: return s;
+    const isManagerOrAdmin = userProfile?.role === 'manager' || userProfile?.role === 'admin';
+
+    const handleResetPassword = async (targetUid, userName) => {
+        if (!window.confirm(`Bạn có chắc chắn muốn reset mật khẩu của "${userName}" về mặc định (123456)?`)) return;
+        setResettingUid(targetUid);
+        try {
+            const functions = getFunctions(undefined, "asia-southeast1");
+            const resetFn = httpsCallable(functions, "resetUserPassword");
+            const result = await resetFn({ targetUid });
+            alert(result.data.message);
+        } catch (err) {
+            console.error("Reset password error:", err);
+            alert("Lỗi: " + (err.message || "Không thể reset mật khẩu."));
+        } finally {
+            setResettingUid(null);
         }
     };
 
-    const isManagerOrAdmin = userProfile?.role === 'manager' || userProfile?.role === 'admin';
+    // --- Search filter ---
+    const filterBySearch = (list) => {
+        if (!searchQuery.trim()) return list;
+        const q = searchQuery.toLowerCase();
+        return list.filter(u =>
+            (u.fullName || '').toLowerCase().includes(q) ||
+            (u.phone || '').includes(q) ||
+            (u.email || '').toLowerCase().includes(q) ||
+            (u.id || '').toLowerCase().includes(q)
+        );
+    };
+
+    // --- Status badge ---
+    const StatusBadge = ({ status }) => {
+        const map = {
+            active: 'bg-emerald-50 text-emerald-700',
+            pending: 'bg-amber-50 text-amber-700',
+            reject_request: 'bg-red-50 text-red-700 font-semibold',
+            delete_request: 'bg-red-50 text-red-700 font-semibold',
+            rejected: 'bg-red-50 text-red-600',
+            inactive: 'bg-gray-100 text-gray-500',
+        };
+        return (
+            <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs ${map[status] || 'bg-gray-100 text-gray-500'}`}>
+                {STATUS_LABELS[status] || status}
+            </span>
+        );
+    };
 
     // --- Render Tab Content ---
+
     const renderPersonnelTab = () => {
-        if (personnelLoading) return <p>Đang tải...</p>;
-        if (!userProfile?.selectedDepartmentId) return <p>Vui lòng chọn khoa/phòng.</p>;
+        if (personnelLoading) return <LoadingState />;
+        if (!userProfile?.selectedDepartmentId) return <EmptyState text="Vui lòng chọn khoa/phòng." />;
+        const filtered = filterBySearch(deptUsers);
 
         return (
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead style={{ background: '#f5f5f5', textAlign: 'left' }}>
-                        <tr>
-                            <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>Họ tên</th>
-                            <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>Quyền</th>
-                            <th style={{ padding: '12px', borderBottom: '2px solid #ddd' }}>Trạng thái</th>
-                            <th style={{ padding: '12px', borderBottom: '2px solid #ddd', textAlign: 'right' }}>Hành động</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {deptUsers.map(u => (
-                            <tr key={u.id} style={{ borderBottom: '1px solid #eee' }}>
-                                <td style={{ padding: '12px' }}>
-                                    <div style={{ fontWeight: 'bold' }}>{u.fullName}</div>
-                                    <div style={{ fontSize: '0.8em', color: '#666' }}>{u.phone}</div>
-                                </td>
-                                <td style={{ padding: '12px' }}>
-                                    {(u.status === 'active' && isManagerOrAdmin && u.role !== 'admin' && u.role !== 'manager') ? (
-                                        <select value={u.role || 'staff'} onChange={(e) => handleRoleUpdate(u.id, e.target.value)} style={{ padding: '4px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                                            <option value="staff">Nhân viên</option>
-                                            <option value="asigner">Giao việc</option>
-                                        </select>
-                                    ) : (
-                                        <span style={{ fontSize: '0.9em' }}>{ROLE_LABELS[u.role] || u.role}</span>
-                                    )}
-                                </td>
-                                <td style={{ padding: '12px' }}>
-                                    <span style={{
-                                        padding: '4px 8px', borderRadius: '12px', fontSize: '0.8em',
-                                        background: u.status === 'active' ? '#e8f5e9' : (u.status === 'pending' || u.status === 'reject_request') ? '#fff3e0' : u.status === 'delete_request' ? '#ffebee' : '#f5f5f5',
-                                        color: u.status === 'active' ? '#2e7d32' : (u.status === 'pending' || u.status === 'reject_request') ? '#ef6c00' : u.status === 'delete_request' ? '#d32f2f' : '#666'
-                                    }}>
-                                        {STATUS_LABELS[u.status] || u.status}
-                                    </span>
-                                </td>
-                                <td style={{ padding: '12px', textAlign: 'right' }}>
-                                    <button onClick={() => setSelectedUser(u)} style={{ padding: '5px 10px', background: '#f5f5f5', color: '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}>Xem</button>
-                                    {u.status === 'pending' && (
-                                        <>
-                                            <button onClick={() => handleUserStatusUpdate(u.id, 'active')} style={{ padding: '5px 10px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}>Duyệt</button>
-                                            <button onClick={() => { if (window.confirm(`Yêu cầu từ chối nhân viên ${u.fullName}?`)) handleUserStatusUpdate(u.id, 'reject_request'); }} style={{ padding: '5px 10px', background: '#c62828', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}>Từ chối</button>
-                                        </>
-                                    )}
-                                    {u.status === 'reject_request' && (<button onClick={() => handleUserStatusUpdate(u.id, 'pending')} style={{ padding: '5px 10px', background: '#757575', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Hủy YC</button>)}
-                                    {u.status === 'active' && u.id !== currentUser.uid && u.role !== 'admin' && (<button onClick={() => { if (window.confirm(`Gửi yêu cầu xóa ${u.fullName}?`)) handleUserStatusUpdate(u.id, 'delete_request'); }} style={{ padding: '5px 10px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Xóa</button>)}
-                                    {u.status === 'delete_request' && (<button onClick={() => handleUserStatusUpdate(u.id, 'active')} style={{ padding: '5px 10px', background: '#757575', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Hủy YC</button>)}
-                                </td>
+            <div className="bg-white rounded-lg border border-gray-200">
+                <SearchBar placeholder="Tìm theo tên, SĐT..." />
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 font-medium border-b border-gray-200">Họ tên</th>
+                                <th className="px-4 py-3 font-medium border-b border-gray-200">Quyền</th>
+                                <th className="px-4 py-3 font-medium border-b border-gray-200">Trạng thái</th>
+                                <th className="px-4 py-3 font-medium border-b border-gray-200 text-right">Hành động</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {filtered.map(u => (
+                                <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-4 py-3">
+                                        <div className="text-sm font-medium text-gray-900">{u.fullName}</div>
+                                        <div className="text-xs text-gray-400">{u.phone}</div>
+                                    </td>
+                                    <td className="px-4 py-3 text-sm">
+                                        {(u.status === 'active' && isManagerOrAdmin && u.role !== 'admin' && u.role !== 'manager') ? (
+                                            <select
+                                                value={u.role || 'staff'}
+                                                onChange={(e) => handleRoleUpdate(u.id, e.target.value)}
+                                                className="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                            >
+                                                <option value="staff">Nhân viên</option>
+                                                <option value="asigner">Giao việc</option>
+                                            </select>
+                                        ) : (
+                                            <span className="text-gray-600">{ROLE_LABELS[u.role] || u.role}</span>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
+                                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                                        <ActionGroup>
+                                            <ActionBtn icon={Eye} label="Xem" onClick={() => setSelectedUser(u)} />
+                                            {u.status === 'pending' && (
+                                                <>
+                                                    <ActionBtn icon={Check} label="Duyệt" variant="success" onClick={() => handleUserStatusUpdate(u.id, 'active')} />
+                                                    <ActionBtn icon={XCircle} label="Từ chối" variant="danger" onClick={() => { if (window.confirm(`Yêu cầu từ chối nhân viên ${u.fullName}?`)) handleUserStatusUpdate(u.id, 'reject_request'); }} />
+                                                </>
+                                            )}
+                                            {u.status === 'reject_request' && (
+                                                <ActionBtn icon={RotateCcw} label="Hủy YC" variant="muted" onClick={() => handleUserStatusUpdate(u.id, 'pending')} />
+                                            )}
+                                            {u.status === 'active' && u.id !== currentUser.uid && u.role !== 'admin' && (
+                                                <ActionBtn icon={Ban} label="Xóa" variant="danger" onClick={() => { if (window.confirm(`Gửi yêu cầu xóa ${u.fullName}?`)) handleUserStatusUpdate(u.id, 'delete_request'); }} />
+                                            )}
+                                            {u.status === 'delete_request' && (
+                                                <ActionBtn icon={RotateCcw} label="Hủy YC" variant="muted" onClick={() => handleUserStatusUpdate(u.id, 'active')} />
+                                            )}
+                                        </ActionGroup>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <TableFooter count={filtered.length} total={deptUsers.length} />
             </div>
         );
     };
 
-    const renderUsersTab = () => (
-        <div>
-            {/* Sub-Tabs - square style like original */}
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '0', borderBottom: '1px solid #ddd', overflowX: 'auto' }}>
-                {userTabs.map(tab => (
-                    <button key={tab.id} onClick={() => setStatusTab(tab.id)} style={{
-                        padding: '10px 20px',
-                        background: statusTab === tab.id ? '#1976d2' : 'transparent',
-                        color: statusTab === tab.id ? '#fff' : '#333',
-                        border: 'none',
-                        borderRadius: '4px 4px 0 0',
-                        cursor: 'pointer',
-                        fontWeight: statusTab === tab.id ? 'bold' : 'normal',
-                        whiteSpace: 'nowrap'
-                    }}>{tab.label} ({statusCounts[tab.id] || 0})</button>
-                ))}
+    const renderUsersTab = () => {
+        const filtered = filterBySearch(allUsers);
+
+        return (
+            <div>
+                {/* Sub-tabs — Firebase Console underline style */}
+                <div className="flex gap-0 border-b border-gray-200 overflow-x-auto no-scrollbar mb-0">
+                    {userTabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setStatusTab(tab.id)}
+                            className={`relative px-4 py-2.5 text-sm whitespace-nowrap transition-colors min-h-[44px] ${
+                                statusTab === tab.id
+                                    ? 'text-primary-600 font-semibold'
+                                    : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                        >
+                            {tab.label} ({statusCounts[tab.id] || 0})
+                            {statusTab === tab.id && (
+                                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 rounded-t" />
+                            )}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="bg-white rounded-b-lg border border-t-0 border-gray-200">
+                    <SearchBar placeholder="Tìm theo tên, SĐT, email hoặc UID..." />
+
+                    {usersLoading ? <LoadingState /> : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
+                                        <th className="px-4 py-3 font-medium border-b border-gray-200">Họ tên</th>
+                                        <th className="px-4 py-3 font-medium border-b border-gray-200 hidden lg:table-cell">Khoa/Phòng</th>
+                                        <th className="px-4 py-3 font-medium border-b border-gray-200 hidden md:table-cell">Vị trí</th>
+                                        <th className="px-4 py-3 font-medium border-b border-gray-200">ĐT</th>
+                                        <th className="px-4 py-3 font-medium border-b border-gray-200 hidden sm:table-cell">Trạng thái</th>
+                                        <th className="px-4 py-3 font-medium border-b border-gray-200 text-right">Hành động</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {filtered.length === 0 ? (
+                                        <tr><td colSpan="6" className="px-4 py-10 text-center text-sm text-gray-400 italic">Không có người dùng nào.</td></tr>
+                                    ) : (
+                                        filtered.map(user => (
+                                            <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                                                <td className="px-4 py-3">
+                                                    <div className="text-sm text-gray-900">{user.fullName || user.displayName || '—'}</div>
+                                                    <div className="text-xs text-gray-400 lg:hidden">
+                                                        {user.departmentIds?.length > 0 ? user.departmentIds.map(id => departmentMap[id] || id).join(", ") : (departmentMap[user.departmentId] || '-')}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600 hidden lg:table-cell">
+                                                    {user.departmentIds?.length > 0 ? user.departmentIds.map(id => departmentMap[id] || id).join(", ") : (departmentMap[user.departmentId] || user.departmentId || '-')}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600 hidden md:table-cell">{user.position || '—'}</td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">{user.phone}</td>
+                                                <td className="px-4 py-3 hidden sm:table-cell"><StatusBadge status={user.status} /></td>
+                                                <td className="px-4 py-3 text-right whitespace-nowrap">
+                                                    <ActionGroup>
+                                                        <ActionBtn
+                                                            icon={Eye}
+                                                            label={statusTab === 'pending' || statusTab === 'delete_request' ? 'Xử lý' : 'Chi tiết'}
+                                                            onClick={() => navigate(`/admin/users/${user.id}`)}
+                                                        />
+                                                        {user.status === 'active' && (
+                                                            <ActionBtn
+                                                                icon={KeyRound}
+                                                                label={resettingUid === user.id ? '...' : 'Reset MK'}
+                                                                variant="warning"
+                                                                disabled={resettingUid === user.id}
+                                                                onClick={() => handleResetPassword(user.id, user.fullName || user.phone)}
+                                                            />
+                                                        )}
+                                                    </ActionGroup>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                    <TableFooter count={filtered.length} total={allUsers.length} />
+                </div>
             </div>
-            {usersLoading ? <p>Đang tải...</p> : (
-                <div style={{ overflowX: 'auto', background: '#fff', borderRadius: '4px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        );
+    };
+
+    const renderDepartmentsTab = () => (
+        <div className="bg-white rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                <span className="text-sm text-gray-500">{departments.length} đơn vị</span>
+                <Link
+                    to="/admin/departments/new"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-full transition-colors min-h-[40px]"
+                >
+                    <Plus className="w-4 h-4" /> Thêm Khoa/Phòng
+                </Link>
+            </div>
+
+            {deptsLoading ? <LoadingState /> : (
+                <div className="overflow-x-auto">
+                    <table className="w-full">
                         <thead>
-                            <tr style={{ background: '#f5f5f5', textAlign: 'left' }}>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Họ tên</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Khoa/Phòng</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Vị trí</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>ĐT</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Trạng thái</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Hành động</th>
+                            <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
+                                <th className="px-4 py-3 font-medium border-b border-gray-200">Tên đơn vị</th>
+                                <th className="px-4 py-3 font-medium border-b border-gray-200">Loại</th>
+                                <th className="px-4 py-3 font-medium border-b border-gray-200">Trạng thái</th>
+                                <th className="px-4 py-3 font-medium border-b border-gray-200 text-right">Hành động</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {allUsers.length === 0 ? (
-                                <tr><td colSpan="6" style={{ padding: '20px', textAlign: 'center', fontStyle: 'italic' }}>Không có.</td></tr>
+                        <tbody className="divide-y divide-gray-100">
+                            {departments.length === 0 ? (
+                                <tr><td colSpan="4" className="px-4 py-10 text-center text-sm text-gray-400">Chưa có đơn vị nào.</td></tr>
                             ) : (
-                                allUsers.map(user => (
-                                    <tr key={user.id} style={{ borderBottom: '1px solid #eee' }}>
-                                        <td style={{ padding: '12px' }}>{user.fullName || user.displayName}</td>
-                                        <td style={{ padding: '12px', fontSize: '0.9em' }}>
-                                            {user.departmentIds?.length > 0 ? user.departmentIds.map(id => departmentMap[id] || id).join(", ") : (departmentMap[user.departmentId] || user.departmentId || '-')}
+                                departments.map(d => (
+                                    <tr key={d.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{d.name}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">{d.type === 'khoa' ? 'Khoa' : 'Phòng'}</td>
+                                        <td className="px-4 py-3">
+                                            {d.isActive
+                                                ? <span className="inline-block px-2.5 py-0.5 rounded-full text-xs bg-emerald-50 text-emerald-700">Hoạt động</span>
+                                                : <span className="inline-block px-2.5 py-0.5 rounded-full text-xs bg-red-50 text-red-600">Ngừng</span>
+                                            }
                                         </td>
-                                        <td style={{ padding: '12px' }}>{user.position}</td>
-                                        <td style={{ padding: '12px' }}>{user.phone}</td>
-                                        <td style={{ padding: '12px' }}>{getStatusLabel(user.status)}</td>
-                                        <td style={{ padding: '12px' }}>
-                                            <button onClick={() => navigate(`/admin/users/${user.id}`)} style={{ padding: '5px 10px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                                {statusTab === 'pending' || statusTab === 'delete_request' ? 'Xử lý' : 'Chi tiết'}
+                                        <td className="px-4 py-3 text-right">
+                                            <button
+                                                onClick={() => navigate(`/admin/departments/${d.id}`)}
+                                                className="text-sm text-primary-600 hover:text-primary-800 font-medium"
+                                            >
+                                                Sửa
                                             </button>
                                         </td>
                                     </tr>
@@ -343,101 +483,140 @@ export default function AdminManagement() {
         </div>
     );
 
-    const renderDepartmentsTab = () => (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '15px' }}>
-                <Link to="/admin/departments/new" style={{ background: '#1976d2', color: 'white', padding: '8px 16px', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold' }}>+ Thêm Khoa/Phòng</Link>
+    // --- Shared UI components ---
+
+    const SearchBar = ({ placeholder }) => (
+        <div className="px-4 py-3 border-b border-gray-200">
+            <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                    type="text"
+                    placeholder={placeholder}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 focus:bg-white transition-colors placeholder:text-gray-400"
+                />
+                {searchQuery && (
+                    <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+                    </button>
+                )}
             </div>
-            {deptsLoading ? <p>Đang tải...</p> : (
-                <div style={{ overflowX: 'auto', background: '#fff', borderRadius: '4px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr style={{ background: '#f5f5f5', textAlign: 'left' }}>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Tên đơn vị</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Loại</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Trạng thái</th>
-                                <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Hành động</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {departments.length === 0 ? (
-                                <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center' }}>Chưa có.</td></tr>
-                            ) : (
-                                departments.map(d => (
-                                    <tr key={d.id} style={{ borderBottom: '1px solid #eee' }}>
-                                        <td style={{ padding: '12px', fontWeight: 'bold' }}>{d.name}</td>
-                                        <td style={{ padding: '12px' }}>{d.type === 'khoa' ? 'Khoa' : 'Phòng'}</td>
-                                        <td style={{ padding: '12px' }}>
-                                            {d.isActive ? <span style={{ color: 'green', background: '#e8f5e9', padding: '4px 8px', borderRadius: '4px', fontSize: '0.9em' }}>Hoạt động</span> : <span style={{ color: 'red', background: '#ffebee', padding: '4px 8px', borderRadius: '4px', fontSize: '0.9em' }}>Ngừng</span>}
-                                        </td>
-                                        <td style={{ padding: '12px' }}>
-                                            <button onClick={() => navigate(`/admin/departments/${d.id}`)} style={{ padding: '5px 10px', background: '#fff', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}>Sửa</button>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
         </div>
     );
 
+    const LoadingState = () => (
+        <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
+            <span className="ml-2 text-sm text-gray-400">Đang tải...</span>
+        </div>
+    );
+
+    const EmptyState = ({ text }) => (
+        <div className="text-center py-16 text-sm text-gray-400">{text}</div>
+    );
+
+    const TableFooter = ({ count, total }) => (
+        <div className="flex items-center justify-end px-4 py-3 border-t border-gray-200 text-xs text-gray-500">
+            <span>{count === total ? `${total} mục` : `${count} / ${total} mục`}</span>
+        </div>
+    );
+
+    const ActionGroup = ({ children }) => (
+        <div className="inline-flex items-center gap-1">{children}</div>
+    );
+
+    const ActionBtn = ({ icon: Icon, label, variant = 'default', onClick, disabled }) => {
+        const variants = {
+            default: 'text-gray-600 hover:bg-gray-100',
+            success: 'text-emerald-600 hover:bg-emerald-50',
+            danger: 'text-red-600 hover:bg-red-50',
+            warning: 'text-amber-600 hover:bg-amber-50',
+            muted: 'text-gray-500 hover:bg-gray-100',
+        };
+        return (
+            <button
+                onClick={onClick}
+                disabled={disabled}
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors min-h-[32px] disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]}`}
+                title={label}
+            >
+                <Icon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{label}</span>
+            </button>
+        );
+    };
+
+    // --- Main render ---
+
     return (
-        <div style={{ padding: '20px' }}>
-            <div style={{ marginBottom: '20px' }}>
-                <h2 style={{ margin: 0 }}>Quản lý Khoa, Phòng</h2>
+        <div>
+            {/* Page Title */}
+            <h1 className="font-heading text-2xl font-bold text-gray-900 mb-1">Quản lý hệ thống</h1>
+            <p className="text-sm text-gray-500 mb-6">Quản lý nhân sự, người dùng và khoa phòng</p>
+
+            {/* Main Tabs — Firebase Console underline style */}
+            <div className="flex gap-0 border-b border-gray-200 mb-6 overflow-x-auto no-scrollbar">
+                {mainTabs.map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => { setActiveTab(tab.id); setSearchQuery(""); }}
+                        className={`relative px-5 py-3 text-sm whitespace-nowrap transition-colors min-h-[48px] ${
+                            activeTab === tab.id
+                                ? 'text-primary-600 font-semibold'
+                                : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        {tab.label}
+                        {tab.count > 0 && <span className="ml-1.5 text-xs text-gray-400">({tab.count})</span>}
+                        {activeTab === tab.id && (
+                            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 rounded-t" />
+                        )}
+                    </button>
+                ))}
             </div>
 
-            {/* Main Tabs */}
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '25px', background: '#e0e0e0', borderRadius: '25px', padding: '4px', width: 'fit-content' }}>
-                <button onClick={() => setActiveTab('personnel')} style={{
-                    padding: '10px 20px', borderRadius: '20px', border: 'none',
-                    background: activeTab === 'personnel' ? '#fff' : 'transparent',
-                    color: activeTab === 'personnel' ? '#1976d2' : '#555',
-                    fontWeight: activeTab === 'personnel' ? 'bold' : 'normal',
-                    boxShadow: activeTab === 'personnel' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-                    cursor: 'pointer'
-                }}>Nhân sự ({deptUsers.length})</button>
-                <button onClick={() => setActiveTab('users')} style={{
-                    padding: '10px 20px', borderRadius: '20px', border: 'none',
-                    background: activeTab === 'users' ? '#fff' : 'transparent',
-                    color: activeTab === 'users' ? '#1976d2' : '#555',
-                    fontWeight: activeTab === 'users' ? 'bold' : 'normal',
-                    boxShadow: activeTab === 'users' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-                    cursor: 'pointer'
-                }}>Người dùng ({Object.values(statusCounts).reduce((a, b) => a + b, 0)})</button>
-                <button onClick={() => setActiveTab('departments')} style={{
-                    padding: '10px 20px', borderRadius: '20px', border: 'none',
-                    background: activeTab === 'departments' ? '#fff' : 'transparent',
-                    color: activeTab === 'departments' ? '#1976d2' : '#555',
-                    fontWeight: activeTab === 'departments' ? 'bold' : 'normal',
-                    boxShadow: activeTab === 'departments' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none',
-                    cursor: 'pointer'
-                }}>Khoa phòng ({departments.length})</button>
-            </div>
-
+            {/* Tab Content */}
             {activeTab === 'personnel' && renderPersonnelTab()}
             {activeTab === 'users' && renderUsersTab()}
             {activeTab === 'departments' && renderDepartmentsTab()}
 
             {/* User Detail Modal */}
             {selectedUser && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div style={{ background: '#fff', padding: '30px', borderRadius: '8px', maxWidth: '500px', width: '90%', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-                        <h3 style={{ marginTop: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Chi tiết nhân sự</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', marginTop: '20px' }}>
-                            <div style={{ fontWeight: 'bold' }}>Họ tên:</div><div>{selectedUser.fullName}</div>
-                            <div style={{ fontWeight: 'bold' }}>SĐT:</div><div>{selectedUser.phone}</div>
-                            <div style={{ fontWeight: 'bold' }}>Email:</div><div>{selectedUser.email || ''}</div>
-                            <div style={{ fontWeight: 'bold' }}>Vị trí:</div><div>{selectedUser.position}</div>
-                            <div style={{ fontWeight: 'bold' }}>Quyền:</div><div>{ROLE_LABELS[selectedUser.role] || selectedUser.role}</div>
-                            <div style={{ fontWeight: 'bold' }}>Trạng thái:</div><div>{STATUS_LABELS[selectedUser.status] || selectedUser.status}</div>
-                            <div style={{ fontWeight: 'bold' }}>Tham gia:</div><div>{selectedUser.createdAt?.toDate ? selectedUser.createdAt.toDate().toLocaleDateString('vi-VN') : 'N/A'}</div>
-                            {selectedUser.status !== 'pending' && (<><div style={{ fontWeight: 'bold' }}>Duyệt bởi:</div><div>{getUserName(selectedUser.approvedBy) || 'N/A'}</div></>)}
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setSelectedUser(null)}>
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-5">
+                            <h3 className="font-heading font-bold text-lg text-gray-900">Chi tiết nhân sự</h3>
+                            <button onClick={() => setSelectedUser(null)} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+                                <X className="w-5 h-5 text-gray-400" />
+                            </button>
                         </div>
-                        <div style={{ marginTop: '30px', textAlign: 'right' }}>
-                            <button onClick={() => setSelectedUser(null)} style={{ padding: '8px 20px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Đóng</button>
+
+                        <div className="space-y-3">
+                            {[
+                                ['Họ tên', selectedUser.fullName],
+                                ['SĐT', selectedUser.phone],
+                                ['Email', selectedUser.email || '—'],
+                                ['Vị trí', selectedUser.position],
+                                ['Quyền', ROLE_LABELS[selectedUser.role] || selectedUser.role],
+                                ['Trạng thái', STATUS_LABELS[selectedUser.status] || selectedUser.status],
+                                ['Tham gia', selectedUser.createdAt?.toDate ? selectedUser.createdAt.toDate().toLocaleDateString('vi-VN') : 'N/A'],
+                                ...(selectedUser.status !== 'pending' ? [['Duyệt bởi', getUserName(selectedUser.approvedBy) || 'N/A']] : []),
+                            ].map(([label, value]) => (
+                                <div key={label} className="flex items-baseline gap-3">
+                                    <span className="text-xs text-gray-400 w-20 flex-shrink-0 text-right">{label}</span>
+                                    <span className="text-sm text-gray-900">{value}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="mt-6 pt-4 border-t border-gray-100 flex justify-end">
+                            <button
+                                onClick={() => setSelectedUser(null)}
+                                className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors min-h-[40px]"
+                            >
+                                Đóng
+                            </button>
                         </div>
                     </div>
                 </div>

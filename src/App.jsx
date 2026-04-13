@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { Toaster } from 'react-hot-toast';
 import Login from './pages/Login';
 import PersonalDashboard from './pages/PersonalDashboard';
 import ManagementDashboard from './pages/ManagementDashboard';
@@ -22,11 +23,13 @@ import DataNormalization from './pages/admin/DataNormalization';
 import ManagerRoute from './components/ManagerRoute';
 import Register from './pages/Register';
 import WaitingApproval from './pages/WaitingApproval';
+import OfflineIndicator from './components/OfflineIndicator';
 
 function App() {
   return (
     <Router>
       <AuthProvider>
+        <OfflineIndicator />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -67,6 +70,20 @@ function App() {
 
           <Route path="/" element={<Navigate to="/app" />} />
         </Routes>
+        <Toaster
+          position="top-center"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              background: '#f9fafb',
+              color: '#111827',
+              fontSize: '0.875rem',
+              borderRadius: '0.75rem',
+              border: '1px solid #e5e7eb',
+              boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.05)',
+            },
+          }}
+        />
       </AuthProvider>
     </Router>
   )

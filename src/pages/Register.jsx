@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { collection, query, where, getDocs, setDoc, doc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { ClipboardCheck, CheckCircle, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function Register() {
     const navigate = useNavigate();
@@ -17,10 +19,8 @@ export default function Register() {
     });
     const [departments, setDepartments] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
 
-    // Fetch active departments
     useEffect(() => {
         async function fetchDepts() {
             try {
@@ -36,7 +36,7 @@ export default function Register() {
     }, []);
 
     const normalizePhone = (p) => {
-        const clean = p.replace(/\D/g, ''); // Keep only digits
+        const clean = p.replace(/\D/g, '');
         return clean.startsWith('0') ? clean.substring(1) : clean;
     };
 
@@ -47,20 +47,18 @@ export default function Register() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setError("");
         setLoading(true);
 
         const { fullName, phone, email, departmentId, position, password, confirmPassword } = formData;
 
-        // Basic validations
         if (!fullName || !phone || !departmentId || !password) {
-            setError("Vui lòng điền đầy đủ thông tin bắt buộc.");
+            toast.error("Vui lòng điền đầy đủ thông tin bắt buộc.");
             setLoading(false);
             return;
         }
 
         if (password !== confirmPassword) {
-            setError("Mật khẩu xác nhận không khớp.");
+            toast.error("Mật khẩu xác nhận không khớp.");
             setLoading(false);
             return;
         }
@@ -68,15 +66,12 @@ export default function Register() {
         const paddedPassword = padPassword(password);
         const normalizedPhone = normalizePhone(phone);
         if (!normalizedPhone) {
-            setError("Số điện thoại không hợp lệ.");
+            toast.error("Số điện thoại không hợp lệ.");
             setLoading(false);
             return;
         }
 
         try {
-            // 1. Check Uniqueness
-            // ... (keep uniqueness checks)
-            // Phone check (check both old 'phone' and new 'phoneNumber' fields)
             const phoneQuery1 = query(collection(db, "users"), where("phone", "==", normalizedPhone));
             const phoneQuery2 = query(collection(db, "users"), where("phoneNumber", "==", normalizedPhone));
             const [phoneSnap1, phoneSnap2] = await Promise.all([getDocs(phoneQuery1), getDocs(phoneQuery2)]);
@@ -84,7 +79,6 @@ export default function Register() {
                 throw new Error("Số điện thoại này đã được sử dụng.");
             }
 
-            // Email check (if provided)
             if (email) {
                 const emailQuery = query(collection(db, "users"), where("email", "==", email));
                 const emailSnap = await getDocs(emailQuery);
@@ -93,20 +87,18 @@ export default function Register() {
                 }
             }
 
-            // 2. Create Auth User
             const authEmail = `${normalizedPhone}@task.app`;
             const userCredential = await createUserWithEmailAndPassword(auth, authEmail, paddedPassword);
             const user = userCredential.user;
 
-            // 3. Create Firestore Document
             await setDoc(doc(db, "users", user.uid), {
                 fullName,
                 phone: normalizedPhone,
-                phoneNumber: normalizedPhone, // For unified login lookup
+                phoneNumber: normalizedPhone,
                 email: (email && email.trim()) || null,
                 authEmail: authEmail,
                 departmentId,
-                departmentIds: [departmentId], // Array for easier querying
+                departmentIds: [departmentId],
                 position,
                 role: "staff",
                 status: "pending",
@@ -117,152 +109,166 @@ export default function Register() {
             setLoading(false);
         } catch (err) {
             console.error(err);
-            setError(err.message.includes("auth/email-already-in-use") ? "Số điện thoại này đã được đăng ký." : err.message);
+            toast.error(err.message.includes("auth/email-already-in-use") ? "Số điện thoại này đã được đăng ký." : err.message);
             setLoading(false);
         }
     };
 
     if (success) {
         return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f5f7fa', padding: '20px' }}>
-                <div style={{ background: '#fff', padding: '40px', borderRadius: '12px', boxShadow: '0 8px 30px rgba(0,0,0,0.1)', textAlign: 'center', maxWidth: '450px', width: '100%' }}>
-                    <div style={{ fontSize: '50px', color: '#4caf50', marginBottom: '20px' }}>✓</div>
-                    <h2 style={{ color: '#2c3e50', marginBottom: '15px' }}>Đăng ký thành công</h2>
-                    <p style={{ color: '#546e7a', lineHeight: '1.6', marginBottom: '25px' }}>
-                        Tài khoản của bạn đã được khởi tạo thành công. Vui lòng chờ <strong>Admin duyệt</strong> trước khi đăng nhập vào hệ thống.
-                    </p>
-                    <button
-                        onClick={() => navigate("/login")}
-                        style={{ width: '100%', padding: '12px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-                    >
-                        Quay lại Đăng nhập
-                    </button>
+            <div className="min-h-dvh flex items-center justify-center bg-gray-50 px-4 py-8">
+                <div className="w-full max-w-sm text-center">
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-success-100 mb-4">
+                            <CheckCircle className="w-8 h-8 text-success-500" />
+                        </div>
+                        <h2 className="font-heading text-xl font-bold text-gray-900 mb-3">Đăng ký thành công</h2>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-6">
+                            Tài khoản đã được khởi tạo. Vui lòng chờ <strong className="text-gray-700">Admin duyệt</strong> trước khi đăng nhập.
+                        </p>
+                        <button
+                            onClick={() => navigate("/login")}
+                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-colors min-h-[48px]"
+                        >
+                            Quay lại Đăng nhập
+                        </button>
+                    </div>
                 </div>
             </div>
         );
     }
 
+    const inputClass = "w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-base text-gray-900 placeholder:text-gray-400 focus-ring transition-colors";
+    const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
+
     return (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: '#f5f7fa', padding: '40px 20px' }}>
-            <div style={{ background: '#fff', padding: '40px', borderRadius: '12px', boxShadow: '0 8px 30px rgba(0,0,0,0.1)', maxWidth: '500px', width: '100%' }}>
-                <h2 style={{ color: '#1976d2', textAlign: 'center', marginBottom: '30px', fontSize: '24px' }}>Đăng ký tài khoản</h2>
-
-                {error && <div style={{ background: '#ffebee', color: '#c62828', padding: '12px', borderRadius: '4px', marginBottom: '20px', fontSize: '14px' }}>{error}</div>}
-
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '600', color: '#37474f' }}>Họ và tên <span style={{ color: 'red' }}>*</span></label>
-                        <input
-                            type="text"
-                            placeholder="Nhập họ và tên đầy đủ"
-                            value={formData.fullName}
-                            onChange={e => setFormData({ ...formData, fullName: e.target.value })}
-                            required
-                            style={{ width: '100%', padding: '10px', border: '1px solid #cfd8dc', borderRadius: '6px', boxSizing: 'border-box' }}
-                        />
+        <div className="min-h-dvh flex items-center justify-center bg-gray-50 px-4 py-8">
+            <div className="w-full max-w-md">
+                {/* Header */}
+                <div className="text-center mb-6">
+                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary-100 mb-4">
+                        <ClipboardCheck className="w-7 h-7 text-primary-600" />
                     </div>
+                    <h1 className="font-heading text-2xl font-bold text-gray-900">Đăng ký tài khoản</h1>
+                    <p className="text-sm text-gray-500 mt-1">Tạo tài khoản mới để sử dụng hệ thống</p>
+                </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                {/* Form Card */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '600', color: '#37474f' }}>Số điện thoại <span style={{ color: 'red' }}>*</span></label>
+                            <label className={labelClass}>Họ và tên <span className="text-danger-500">*</span></label>
                             <input
-                                type="tel"
-                                placeholder="09xxxxxxx"
-                                value={formData.phone}
-                                onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                type="text"
+                                placeholder="Nhập họ và tên đầy đủ"
+                                value={formData.fullName}
+                                onChange={e => setFormData({ ...formData, fullName: e.target.value })}
                                 required
-                                style={{ width: '100%', padding: '10px', border: '1px solid #cfd8dc', borderRadius: '6px', boxSizing: 'border-box' }}
+                                className={inputClass}
                             />
                         </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '600', color: '#37474f' }}>Email (Tùy chọn)</label>
-                            <input
-                                type="email"
-                                placeholder="example@gmail.com"
-                                value={formData.email}
-                                onChange={e => setFormData({ ...formData, email: e.target.value })}
-                                style={{ width: '100%', padding: '10px', border: '1px solid #cfd8dc', borderRadius: '6px', boxSizing: 'border-box' }}
-                            />
-                        </div>
-                    </div>
 
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '600', color: '#37474f' }}>Khoa / Phòng công tác <span style={{ color: 'red' }}>*</span></label>
-                        <select
-                            value={formData.departmentId}
-                            onChange={e => setFormData({ ...formData, departmentId: e.target.value })}
-                            required
-                            style={{ width: '100%', padding: '10px', border: '1px solid #cfd8dc', borderRadius: '6px', boxSizing: 'border-box', background: '#fff' }}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className={labelClass}>Số điện thoại <span className="text-danger-500">*</span></label>
+                                <input
+                                    type="tel"
+                                    placeholder="09xxxxxxx"
+                                    value={formData.phone}
+                                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                    required
+                                    className={inputClass}
+                                />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Email <span className="text-gray-400 font-normal">(Tùy chọn)</span></label>
+                                <input
+                                    type="email"
+                                    placeholder="example@gmail.com"
+                                    value={formData.email}
+                                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                    className={inputClass}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className={labelClass}>Khoa / Phòng công tác <span className="text-danger-500">*</span></label>
+                            <select
+                                value={formData.departmentId}
+                                onChange={e => setFormData({ ...formData, departmentId: e.target.value })}
+                                required
+                                className={inputClass}
+                            >
+                                <option value="">-- Chọn Khoa/Phòng --</option>
+                                {departments.map(d => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className={labelClass}>Vị trí công tác</label>
+                            <select
+                                value={formData.position}
+                                onChange={e => setFormData({ ...formData, position: e.target.value })}
+                                className={inputClass}
+                            >
+                                <option value="Trưởng khoa">Trưởng khoa</option>
+                                <option value="Trưởng phòng">Trưởng phòng</option>
+                                <option value="Phó trưởng khoa">Phó trưởng khoa</option>
+                                <option value="Phó trưởng phòng">Phó trưởng phòng</option>
+                                <option value="Điều dưỡng trưởng">Điều dưỡng trưởng</option>
+                                <option value="Nhân viên">Nhân viên</option>
+                            </select>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className={labelClass}>Mật khẩu <span className="text-danger-500">*</span></label>
+                                <input
+                                    type="password"
+                                    value={formData.password}
+                                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                    required
+                                    className={inputClass}
+                                />
+                            </div>
+                            <div>
+                                <label className={labelClass}>Xác nhận mật khẩu <span className="text-danger-500">*</span></label>
+                                <input
+                                    type="password"
+                                    value={formData.confirmPassword}
+                                    onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
+                                    required
+                                    className={inputClass}
+                                />
+                            </div>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full flex items-center justify-center gap-2 py-3 mt-2 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 text-white font-semibold rounded-xl text-base transition-colors min-h-[48px]"
                         >
-                            <option value="">-- Chọn Khoa/Phòng --</option>
-                            {departments.map(d => (
-                                <option key={d.id} value={d.id}>{d.name}</option>
-                            ))}
-                        </select>
-                    </div>
+                            {loading ? (
+                                <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    Đang xử lý...
+                                </>
+                            ) : (
+                                "Đăng ký"
+                            )}
+                        </button>
 
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '600', color: '#37474f' }}>Vị trí công tác</label>
-                        <select
-                            value={formData.position}
-                            onChange={e => setFormData({ ...formData, position: e.target.value })}
-                            style={{ width: '100%', padding: '10px', border: '1px solid #cfd8dc', borderRadius: '6px', boxSizing: 'border-box', background: '#fff' }}
-                        >
-                            <option value="Trưởng khoa">Trưởng khoa</option>
-                            <option value="Trưởng phòng">Trưởng phòng</option>
-                            <option value="Phó trưởng khoa">Phó trưởng khoa</option>
-                            <option value="Phó trưởng phòng">Phó trưởng phòng</option>
-                            <option value="Điều dưỡng trưởng">Điều dưỡng trưởng</option>
-                            <option value="Nhân viên">Nhân viên</option>
-                        </select>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '600', color: '#37474f' }}>Mật khẩu <span style={{ color: 'red' }}>*</span></label>
-                            <input
-                                type="password"
-                                value={formData.password}
-                                onChange={e => setFormData({ ...formData, password: e.target.value })}
-                                required
-                                style={{ width: '100%', padding: '10px', border: '1px solid #cfd8dc', borderRadius: '6px', boxSizing: 'border-box' }}
-                            />
+                        <div className="text-center text-sm text-gray-500 pt-2">
+                            Đã có tài khoản?{' '}
+                            <Link to="/login" className="text-primary-600 font-semibold hover:text-primary-700">
+                                Đăng nhập ngay
+                            </Link>
                         </div>
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: '600', color: '#37474f' }}>Xác nhận mật khẩu <span style={{ color: 'red' }}>*</span></label>
-                            <input
-                                type="password"
-                                value={formData.confirmPassword}
-                                onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
-                                required
-                                style={{ width: '100%', padding: '10px', border: '1px solid #cfd8dc', borderRadius: '6px', boxSizing: 'border-box' }}
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        style={{
-                            marginTop: '10px',
-                            padding: '14px',
-                            background: '#1976d2',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                            fontWeight: 'bold',
-                            transition: 'background 0.3s'
-                        }}
-                    >
-                        {loading ? "Đang xử lý..." : "Đăng ký"}
-                    </button>
-
-                    <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '14px' }}>
-                        Đã có tài khoản? <Link to="/login" style={{ color: '#1976d2', textDecoration: 'none', fontWeight: '600' }}>Đăng nhập ngay</Link>
-                    </div>
-                </form>
+                    </form>
+                </div>
             </div>
         </div>
     );

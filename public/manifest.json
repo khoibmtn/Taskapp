@@ -1,12 +1,8 @@
 {
     "short_name": "TaskApp",
-    "name": "Task Management System",
+    "name": "TaskApp - Giao việc",
+    "description": "Ứng dụng quản lý và giao việc nội bộ cho bệnh viện",
     "icons": [
-        {
-            "src": "favicon.ico",
-            "sizes": "64x64 32x32 24x24 16x16",
-            "type": "image/x-icon"
-        },
         {
             "src": "logo192.png",
             "type": "image/png",
@@ -16,10 +12,33 @@
             "src": "logo512.png",
             "type": "image/png",
             "sizes": "512x512"
+        },
+        {
+            "src": "logo512.png",
+            "type": "image/png",
+            "sizes": "512x512",
+            "purpose": "maskable"
         }
     ],
-    "start_url": ".",
+    "start_url": "/app",
+    "scope": "/",
     "display": "standalone",
-    "theme_color": "#1976d2",
-    "background_color": "#ffffff"
+    "orientation": "portrait-primary",
+    "theme_color": "#0d9488",
+    "background_color": "#f9fafb",
+    "categories": ["productivity", "business"],
+    "shortcuts": [
+        {
+            "name": "Tạo việc mới",
+            "short_name": "Tạo việc",
+            "url": "/app/create-task",
+            "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "Dashboard",
+            "short_name": "Dashboard",
+            "url": "/app",
+            "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+        }
+    ]
 }

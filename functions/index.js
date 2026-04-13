@@ -1,10 +1,14 @@
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { getFirestore } = require("firebase-admin/firestore");
 
 admin.initializeApp();
 
 const db = admin.firestore();
+// Named database where all app data (users, tasks, etc.) lives
+const taskDb = getFirestore(admin.app(), "taskapp");
 const fcm = admin.messaging();
 
 /**
@@ -316,3 +320,46 @@ function calculateNextOccurrence(baseDate, recurrence) {
     }
     return nextDate;
 }
+
+/**
+ * Callable: Reset mật khẩu user về mặc định (Admin only)
+ * Input: { targetUid: string }
+ * Mật khẩu mặc định: "123456" → padStart(6, '0') → "123456"
+ */
+exports.resetUserPassword = onCall({ region: "asia-southeast1" }, async (request) => {
+    // 1. Auth check
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Bạn phải đăng nhập.");
+    }
+
+    const callerUid = request.auth.uid;
+    const { targetUid } = request.data;
+
+    if (!targetUid) {
+        throw new HttpsError("invalid-argument", "Thiếu targetUid.");
+    }
+
+    // 2. Verify caller is admin (read from 'taskapp' named database)
+    const callerDoc = await taskDb.collection("users").doc(callerUid).get();
+    if (!callerDoc.exists || callerDoc.data().role !== "admin") {
+        throw new HttpsError("permission-denied", "Chỉ Admin mới có quyền reset mật khẩu.");
+    }
+
+    // 3. Reset password — apply same padPassword logic as client
+    const defaultPassword = "123456";
+    const paddedPassword = defaultPassword.padStart(6, "0"); // "123456" (no change for 6-char input)
+
+    try {
+        await admin.auth().updateUser(targetUid, { password: paddedPassword });
+
+        // 4. Log the action
+        const targetDoc = await taskDb.collection("users").doc(targetUid).get();
+        const targetName = targetDoc.exists ? targetDoc.data().fullName : targetUid;
+        console.log(`Admin ${callerUid} reset password for ${targetName} (${targetUid})`);
+
+        return { success: true, message: `Đã reset mật khẩu cho ${targetName} về mặc định.` };
+    } catch (error) {
+        console.error("Reset password error:", error);
+        throw new HttpsError("internal", "Lỗi khi reset mật khẩu: " + error.message);
+    }
+});

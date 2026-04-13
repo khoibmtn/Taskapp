@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc, writeBatch } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { Bell, CheckCheck, User } from 'lucide-react';
 
 export default function NotificationDropdown() {
     const { currentUser } = useAuth();
@@ -10,7 +11,7 @@ export default function NotificationDropdown() {
     const [isOpen, setIsOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
-    const [activeTab, setActiveTab] = useState('all'); // 'all' or 'unread'
+    const [activeTab, setActiveTab] = useState('all');
     const dropdownRef = useRef(null);
 
     useEffect(() => {
@@ -26,8 +27,7 @@ export default function NotificationDropdown() {
         const unsubscribe = onSnapshot(q, (snap) => {
             const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
             setNotifications(list);
-            const unread = list.filter(n => !n.isRead).length;
-            setUnreadCount(unread);
+            setUnreadCount(list.filter(n => !n.isRead).length);
         });
 
         return () => unsubscribe();
@@ -70,202 +70,107 @@ export default function NotificationDropdown() {
         : notifications;
 
     return (
-        <div style={{ position: 'relative' }} ref={dropdownRef}>
-            {/* Bell Icon & Badge */}
-            <div
+        <div className="relative" ref={dropdownRef}>
+            {/* Bell Button */}
+            <button
                 onClick={() => setIsOpen(!isOpen)}
-                style={{
-                    cursor: 'pointer',
-                    position: 'relative',
-                    padding: '8px',
-                    borderRadius: '50%',
-                    background: isOpen ? '#e3f2fd' : 'transparent',
-                    transition: 'background 0.2s'
-                }}
+                className={`relative p-2 rounded-lg transition-colors ${
+                    isOpen ? 'bg-primary-50 text-primary-600' : 'text-gray-500 hover:bg-gray-100'
+                }`}
             >
-                <span style={{ fontSize: '1.4em' }}>🔔</span>
+                <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                    <span style={{
-                        position: 'absolute',
-                        top: '0',
-                        right: '0',
-                        background: '#d32f2f',
-                        color: '#fff',
-                        borderRadius: '50%',
-                        width: '18px',
-                        height: '18px',
-                        fontSize: '11px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 'bold',
-                        border: '2px solid #fff'
-                    }}>
+                    <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-danger-500 text-white text-[10px] font-bold rounded-full px-1 border-2 border-white">
                         {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                 )}
-            </div>
+            </button>
 
-            {/* Dropdown Menu */}
+            {/* Dropdown */}
             {isOpen && (
-                <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: '0',
-                    width: '360px',
-                    background: '#fff',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    borderRadius: '8px',
-                    marginTop: '10px',
-                    zIndex: 1000,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    maxHeight: '500px'
-                }}>
-                    <div style={{ padding: '15px', borderBottom: '1px solid #eee' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <h3 style={{ margin: 0, fontSize: '1.2em' }}>Thông báo</h3>
+                <div className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] max-w-sm bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col max-h-[80vh] lg:max-h-[500px] lg:w-96">
+                    {/* Header */}
+                    <div className="p-4 border-b border-gray-100">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-heading font-bold text-lg text-gray-900">Thông báo</h3>
                             {unreadCount > 0 && (
                                 <button
                                     onClick={markAllAsRead}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#1877f2',
-                                        fontSize: '0.9em',
-                                        cursor: 'pointer',
-                                        padding: '4px 8px',
-                                        borderRadius: '4px'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f2f2f2'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                    className="flex items-center gap-1 text-sm text-primary-600 hover:bg-primary-50 px-2 py-1 rounded-lg transition-colors"
                                 >
-                                    Đánh dấu tất cả là đã đọc
+                                    <CheckCheck className="w-4 h-4" />
+                                    <span className="hidden sm:inline">Đọc tất cả</span>
                                 </button>
                             )}
                         </div>
 
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                            <button
-                                onClick={() => setActiveTab('all')}
-                                style={{
-                                    padding: '6px 15px',
-                                    borderRadius: '20px',
-                                    border: 'none',
-                                    background: activeTab === 'all' ? '#e7f3ff' : 'transparent',
-                                    color: activeTab === 'all' ? '#1877f2' : '#65676b',
-                                    fontWeight: 'bold',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Tất cả
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('unread')}
-                                style={{
-                                    padding: '6px 15px',
-                                    borderRadius: '20px',
-                                    border: 'none',
-                                    background: activeTab === 'unread' ? '#e7f3ff' : 'transparent',
-                                    color: activeTab === 'unread' ? '#1877f2' : '#65676b',
-                                    fontWeight: 'bold',
-                                    cursor: 'pointer'
-                                }}
-                            >
-                                Chưa đọc
-                            </button>
+                        {/* Tabs */}
+                        <div className="flex gap-2">
+                            {[
+                                { key: 'all', label: 'Tất cả' },
+                                { key: 'unread', label: 'Chưa đọc' }
+                            ].map(tab => (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setActiveTab(tab.key)}
+                                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                                        activeTab === tab.key
+                                            ? 'bg-primary-100 text-primary-700'
+                                            : 'text-gray-500 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
                         </div>
                     </div>
 
-                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                    {/* Notification list */}
+                    <div className="flex-1 overflow-y-auto">
                         {filteredNotifications.length === 0 ? (
-                            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#65676b' }}>
+                            <div className="py-12 text-center text-gray-400 text-sm">
                                 Không có thông báo nào.
                             </div>
                         ) : (
                             filteredNotifications.map(notif => (
-                                <div
+                                <button
                                     key={notif.id}
                                     onClick={() => handleNotifClick(notif)}
-                                    style={{
-                                        padding: '12px 15px',
-                                        display: 'flex',
-                                        gap: '12px',
-                                        cursor: 'pointer',
-                                        transition: 'background 0.2s',
-                                        background: '#fff',
-                                        position: 'relative',
-                                        alignItems: 'start'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f2f2f2'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = '#fff'}
+                                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
                                 >
-                                    {/* Avatar Placeholder / Icon */}
-                                    <div style={{
-                                        width: '56px',
-                                        height: '56px',
-                                        borderRadius: '50%',
-                                        background: '#1976d2',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#fff',
-                                        fontSize: '1.5em',
-                                        flexShrink: 0,
-                                        overflow: 'hidden'
-                                    }}>
+                                    {/* Avatar */}
+                                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0 overflow-hidden">
                                         {notif.fromAvatar ? (
-                                            <img src={notif.fromAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            <img src={notif.fromAvatar} alt="" className="w-full h-full object-cover" />
                                         ) : (
-                                            <span>👤</span>
+                                            <User className="w-5 h-5 text-primary-600" />
                                         )}
                                     </div>
 
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{
-                                            fontSize: '0.95em',
-                                            lineHeight: '1.4',
-                                            color: '#050505',
-                                            fontWeight: notif.isRead ? 'normal' : 'bold'
-                                        }}>
+                                    {/* Content */}
+                                    <div className="flex-1 min-w-0">
+                                        <p className={`text-sm leading-snug ${notif.isRead ? 'text-gray-600' : 'text-gray-900 font-medium'}`}>
                                             {notif.body}
-                                        </div>
-                                        <div style={{
-                                            fontSize: '0.8em',
-                                            color: notif.isRead ? '#65676b' : '#1877f2',
-                                            marginTop: '4px',
-                                            fontWeight: notif.isRead ? 'normal' : 'bold'
-                                        }}>
+                                        </p>
+                                        <p className={`text-xs mt-1 ${notif.isRead ? 'text-gray-400' : 'text-primary-600 font-medium'}`}>
                                             {notif.createdAt?.toDate ? formatTimeAgo(notif.createdAt.toDate()) : 'Vừa xong'}
-                                        </div>
+                                        </p>
                                     </div>
 
+                                    {/* Unread dot */}
                                     {!notif.isRead && (
-                                        <div style={{
-                                            width: '12px',
-                                            height: '12px',
-                                            background: '#1877f2',
-                                            borderRadius: '50%',
-                                            alignSelf: 'center'
-                                        }} />
+                                        <div className="w-2.5 h-2.5 rounded-full bg-primary-500 mt-2 flex-shrink-0" />
                                     )}
-                                </div>
+                                </button>
                             ))
                         )}
                     </div>
 
-                    <div style={{ padding: '10px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'center' }}>
+                    {/* Footer */}
+                    <div className="border-t border-gray-100">
                         <button
                             onClick={() => { navigate('/app/notifications'); setIsOpen(false); }}
-                            style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#1877f2',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                width: '100%',
-                                padding: '8px'
-                            }}
+                            className="w-full py-3 text-sm font-medium text-primary-600 hover:bg-primary-50 transition-colors rounded-b-xl"
                         >
                             Xem tất cả thông báo
                         </button>

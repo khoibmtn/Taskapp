@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getMessaging } from "firebase/messaging";
 
 const firebaseConfig = {
@@ -21,6 +21,15 @@ const auth = getAuth(app);
 
 // Use standard WebSockets for speed, but connect to 'taskapp' database
 const db = getFirestore(app, "taskapp");
+
+// Enable offline persistence for Firestore
+enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+        console.warn('Offline persistence: Multiple tabs open, persistence enabled in first tab only.');
+    } else if (err.code === 'unimplemented') {
+        console.warn('Offline persistence: Browser does not support IndexedDB.');
+    }
+});
 
 const messaging = getMessaging(app);
 

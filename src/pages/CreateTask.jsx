@@ -3,6 +3,7 @@ import { collection, addDoc, serverTimestamp, getDocs, query, where } from "fire
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { Loader2, AlertTriangle, Send } from "lucide-react";
 
 export default function CreateTask() {
     const { currentUser, userProfile } = useAuth();
@@ -12,7 +13,7 @@ export default function CreateTask() {
     const [content, setContent] = useState("");
 
     // Time Configuration
-    const [timeType, setTimeType] = useState("fixed"); // fixed, range, recurrence
+    const [timeType, setTimeType] = useState("fixed");
     const [dueDate, setDueDate] = useState("");
     const [dueTime, setDueTime] = useState("");
     const [fromDate, setFromDate] = useState("");
@@ -20,9 +21,9 @@ export default function CreateTask() {
 
     // Recurrence state
     const [recurrenceFreq, setRecurrenceFreq] = useState("weekly");
-    const [selectedDays, setSelectedDays] = useState([]); // [1, 2, 3...] for weekly
+    const [selectedDays, setSelectedDays] = useState([]);
     const [dayOfMonth, setDayOfMonth] = useState(1);
-    const [specificDate, setSpecificDate] = useState(""); // MM-DD
+    const [specificDate, setSpecificDate] = useState("");
 
     const [priority, setPriority] = useState("normal");
     const [assigneeUids, setAssigneeUids] = useState([]);
@@ -30,19 +31,17 @@ export default function CreateTask() {
     const [alertFlag, setAlertFlag] = useState(false);
 
     const [users, setUsers] = useState([]);
-    const [allUsers, setAllUsers] = useState([]); // Full list for Supervisor selection
+    const [allUsers, setAllUsers] = useState([]);
     const [managers, setManagers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [fetchingUsers, setFetchingUsers] = useState(true);
 
-    // Fetch users for dropdown
     useEffect(() => {
         if (!userProfile?.selectedDepartmentId) return;
 
         async function fetchDocs() {
             setFetchingUsers(true);
             try {
-                // Fetch only users who belong to the selected department and are 'active'
                 const usersRef = collection(db, "users");
                 const deptId = userProfile.selectedDepartmentId;
 
@@ -71,22 +70,19 @@ export default function CreateTask() {
                 processSnapshot(qNew);
                 processSnapshot(qOld);
 
-                setAllUsers(userList); // Save full list before filtering
+                setAllUsers(userList);
 
-                // --- PERMISSION FILTERING ---
                 const myRole = userProfile?.role || 'staff';
                 const myUid = currentUser.uid;
                 let filteredUsers = userList;
 
                 if (myRole === 'admin' || myRole === 'manager') {
-                    // Admin & Manager: Can assign to all (already filtered by dept & active)
+                    // Can assign to all
                 } else if (myRole === 'asigner') {
-                    // Assigner: Can assign to all EXCEPT Managers
                     filteredUsers = userList.filter(u => u.role !== 'manager');
                 } else {
-                    // Staff: Can ONLY assign to themselves
                     filteredUsers = userList.filter(u => u.uid === myUid);
-                    setAssigneeUids([myUid]); // Auto select self
+                    setAssigneeUids([myUid]);
                 }
 
                 setUsers(filteredUsers);
@@ -100,7 +96,6 @@ export default function CreateTask() {
         fetchDocs();
     }, [userProfile?.selectedDepartmentId, userProfile?.role, currentUser.uid]);
 
-    // Helper: Calculate initial nextDeadline for recurring tasks
     const calculateNextDeadline = (frequency, daysOfWeek, dayOfMonth, specificDate, timeStr) => {
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -109,41 +104,29 @@ export default function CreateTask() {
         if (frequency === 'weekly' && Array.isArray(daysOfWeek) && daysOfWeek.length > 0) {
             const currentDay = now.getDay();
             const sortedDays = [...daysOfWeek].map(Number).sort((a, b) => a - b);
-
-            // Find earliest day in the week that is >= today
-            // Note: If today is the day, but time passed? 
-            // For simplicity in Create, we assume if creating for today, it counts as today (user can set time).
             let nextDay = sortedDays.find(d => d >= currentDay);
-
             let daysToAdd = 0;
             if (nextDay !== undefined) {
                 daysToAdd = nextDay - currentDay;
             } else {
-                // No day left this week, wrap to first day next week
                 nextDay = sortedDays[0];
                 daysToAdd = (7 - currentDay) + nextDay;
             }
             nextDate.setDate(today.getDate() + daysToAdd);
-
         } else if (frequency === 'monthly' && dayOfMonth) {
             nextDate.setDate(dayOfMonth);
-            // If day passed in current month, move to next month
-            // (Strictly: If today > dayOfMonth. If today == dayOfMonth, acceptable)
             if (today.getDate() > dayOfMonth) {
                 nextDate.setMonth(nextDate.getMonth() + 1);
             }
         } else if (frequency === 'yearly' && specificDate) {
             try {
                 let d, m;
-                // Normalize formatting: "31/12" (DD/MM) or "12-31" (MM-DD)
                 if (specificDate.includes('/')) {
                     [d, m] = specificDate.split('/').map(Number);
                 } else {
                     [m, d] = specificDate.split('-').map(Number);
                 }
-
                 nextDate = new Date(today.getFullYear(), m - 1, d);
-                // If date passed in current year
                 if (nextDate < today) {
                     nextDate.setFullYear(today.getFullYear() + 1);
                 }
@@ -152,7 +135,6 @@ export default function CreateTask() {
             }
         }
 
-        // Set Time
         if (timeStr) {
             const [h, m] = timeStr.split(':').map(Number);
             nextDate.setHours(h, m, 0, 0);
@@ -165,107 +147,62 @@ export default function CreateTask() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!title.trim()) {
-            alert("Vui lòng nhập tên công việc");
-            return;
-        }
+        if (!title.trim()) { alert("Vui lòng nhập tên công việc"); return; }
+        if (!userProfile?.selectedDepartmentId) { alert("Bạn chưa chọn khoa/phòng để giao việc."); return; }
 
-        if (!userProfile?.selectedDepartmentId) {
-            alert("Bạn chưa chọn khoa/phòng để giao việc.");
-            return;
-        }
-
-        // Validate Assignees
-        // For Staff, it should be auto-filled, but good to check
         let finalAssignees = [...assigneeUids];
-        if (userProfile?.role === 'staff') {
-            finalAssignees = [currentUser.uid];
-        }
-
-        if (finalAssignees.length === 0) {
-            alert("Vui lòng chọn ít nhất 1 người thực hiện công việc (Giao cho nhân viên).");
-            return;
-        }
+        if (userProfile?.role === 'staff') { finalAssignees = [currentUser.uid]; }
+        if (finalAssignees.length === 0) { alert("Vui lòng chọn ít nhất 1 người thực hiện công việc."); return; }
 
         setLoading(true);
-
         try {
             const timeStr = dueTime || "23:59";
-
             const taskData = {
-                title,
-                content,
-                priority,
-                alertFlag,
-                timeType,
+                title, content, priority, alertFlag, timeType,
                 createdBy: currentUser.uid,
                 createdAt: serverTimestamp(),
                 status: 'open',
                 departmentId: userProfile.selectedDepartmentId,
                 supervisorId: supervisorId || null,
-                isDeleted: false,
-                isArchived: false,
-                isRecurringTemplate: false
+                isDeleted: false, isArchived: false, isRecurringTemplate: false
             };
 
-            // Process Time Data
             if (timeType === 'fixed') {
                 taskData.dueAt = dueDate ? new Date(`${dueDate}T${timeStr}`) : null;
             } else if (timeType === 'range') {
                 taskData.fromDate = fromDate ? new Date(`${fromDate}T00:00`) : null;
                 taskData.toDate = toDate ? new Date(`${toDate}T${timeStr}`) : null;
             } else if (timeType === 'recurrence') {
-                taskData.isRecurringTemplate = true; // Mark as Template
-                taskData.lastGeneratedDate = serverTimestamp(); // Track generation
+                taskData.isRecurringTemplate = true;
+                taskData.lastGeneratedDate = serverTimestamp();
                 taskData.recurrence = {
                     frequency: recurrenceFreq,
                     daysOfWeek: recurrenceFreq === 'weekly' ? selectedDays : null,
                     dayOfMonth: recurrenceFreq === 'monthly' ? dayOfMonth : null,
                     specificDate: recurrenceFreq === 'yearly' ? specificDate : null
                 };
-
-                // Calculate first deadline
-                const initialDeadline = calculateNextDeadline(
-                    recurrenceFreq,
-                    recurrenceFreq === 'weekly' ? selectedDays : null,
-                    recurrenceFreq === 'monthly' ? dayOfMonth : null,
-                    recurrenceFreq === 'yearly' ? specificDate : null,
-                    timeStr
-                );
+                const initialDeadline = calculateNextDeadline(recurrenceFreq, recurrenceFreq === 'weekly' ? selectedDays : null, recurrenceFreq === 'monthly' ? dayOfMonth : null, recurrenceFreq === 'yearly' ? specificDate : null, timeStr);
                 taskData.nextDeadline = initialDeadline;
             }
 
             const assigneesMap = {};
-            // Enforce logic again just in case state wasn't updated or manipulated
             let uidsToSave = assigneeUids;
-            if (userProfile?.role === 'staff') {
-                uidsToSave = [currentUser.uid];
-            }
-
-            uidsToSave.forEach(uid => {
-                assigneesMap[uid] = true;
-            });
+            if (userProfile?.role === 'staff') { uidsToSave = [currentUser.uid]; }
+            uidsToSave.forEach(uid => { assigneesMap[uid] = true; });
             taskData.assignees = assigneesMap;
-            taskData.assigneeUids = uidsToSave; // Array for indexing
+            taskData.assigneeUids = uidsToSave;
 
             const docRef = await addDoc(collection(db, "tasks"), taskData);
 
-            // IF RECURRING: Immediately spawn the first instance
             if (timeType === 'recurrence') {
                 const firstInstance = {
-                    ...taskData,
-                    isRecurringTemplate: false, // Instance is NOT a template
-                    parentTaskId: docRef.id,     // Linked to parent
-                    dueAt: taskData.nextDeadline, // Fixed dueAt for this instance
-                    nextDeadline: null,          // Instance doesn't need nextDeadline
-                    lastGeneratedDate: null,
-                    createdAt: serverTimestamp()
+                    ...taskData, isRecurringTemplate: false, parentTaskId: docRef.id,
+                    dueAt: taskData.nextDeadline, nextDeadline: null, lastGeneratedDate: null, createdAt: serverTimestamp()
                 };
                 await addDoc(collection(db, "tasks"), firstInstance);
             }
 
             alert("Giao việc thành công!");
-            // Redirect to Personal Dashboard as it is accessible by everyone
             navigate("/app");
         } catch (error) {
             console.error("Error creating task:", error);
@@ -276,341 +213,247 @@ export default function CreateTask() {
     };
 
     const toggleAssignee = (uid) => {
-        setAssigneeUids(prev => {
-            if (prev.includes(uid)) {
-                return prev.filter(id => id !== uid);
-            } else {
-                return [...prev, uid];
-            }
-        });
+        setAssigneeUids(prev => prev.includes(uid) ? prev.filter(id => id !== uid) : [...prev, uid]);
     };
 
+    const DAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    const PRIORITY_OPTIONS = [
+        { value: 'high', label: 'Cao', color: 'text-red-600' },
+        { value: 'normal', label: 'Trung bình', color: 'text-gray-700' },
+        { value: 'low', label: 'Thấp', color: 'text-gray-400' },
+    ];
+
     return (
-        <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-            <h2 style={{ marginBottom: '20px' }}>Giao Việc Mới</h2>
+        <div className="max-w-2xl mx-auto">
+            <h1 className="font-heading text-2xl font-bold text-gray-900 mb-1">Giao việc mới</h1>
+            <p className="text-sm text-gray-500 mb-6">Tạo công việc mới và giao cho nhân viên</p>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <form onSubmit={handleSubmit} className="space-y-0">
 
-                {/* Title */}
-                <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Tên công việc <span style={{ color: 'red' }}>*</span></label>
-                    <input
-                        type="text"
-                        value={title}
-                        onChange={e => setTitle(e.target.value)}
-                        style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
-                        placeholder="Nhập tên công việc..."
-                    />
+                {/* Card: Basic Info */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5 mb-4">
+                    <FormField label="Tên công việc" required>
+                        <input
+                            type="text"
+                            value={title}
+                            onChange={e => setTitle(e.target.value)}
+                            placeholder="Nhập tên công việc..."
+                            className="form-input"
+                        />
+                    </FormField>
+
+                    <FormField label="Nội dung chi tiết">
+                        <textarea
+                            value={content}
+                            onChange={e => setContent(e.target.value)}
+                            rows="3"
+                            placeholder="Mô tả chi tiết công việc..."
+                            className="form-input resize-y"
+                        />
+                    </FormField>
                 </div>
 
-                {/* Content */}
-                <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Nội dung chi tiết</label>
-                    <textarea
-                        value={content}
-                        onChange={e => setContent(e.target.value)}
-                        rows="4"
-                        style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
-                    ></textarea>
-                </div>
+                {/* Card: Time */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5 mb-4">
+                    <FormField label="Loại thời gian hoàn thành">
+                        <select value={timeType} onChange={e => setTimeType(e.target.value)} className="form-input">
+                            <option value="fixed">Ngày cố định</option>
+                            <option value="range">Khoảng thời gian</option>
+                            <option value="recurrence">Lặp lại (Định kỳ)</option>
+                        </select>
+                    </FormField>
 
-                {/* Time Type Selection */}
-                <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Loại thời gian hoàn thành</label>
-                    <select
-                        value={timeType}
-                        onChange={e => setTimeType(e.target.value)}
-                        style={{ width: '100%', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                    >
-                        <option value="fixed">Ngày cố định</option>
-                        <option value="range">Khoảng thời gian</option>
-                        <option value="recurrence">Lặp lại (Định kỳ)</option>
-                    </select>
-                </div>
+                    {timeType === 'fixed' && (
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField label="Ngày hoàn thành">
+                                <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="form-input" />
+                            </FormField>
+                            <FormField label="Giờ">
+                                <input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} className="form-input" />
+                            </FormField>
+                        </div>
+                    )}
 
-                {/* Conditional Time Inputs */}
-                {timeType === 'fixed' && (
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Ngày hoàn thành</label>
-                            <input
-                                type="date"
-                                value={dueDate}
-                                onChange={e => setDueDate(e.target.value)}
-                                style={{ width: '100%', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                            />
+                    {timeType === 'range' && (
+                        <div className="grid grid-cols-3 gap-3">
+                            <FormField label="Từ ngày">
+                                <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="form-input" />
+                            </FormField>
+                            <FormField label="Đến ngày">
+                                <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="form-input" />
+                            </FormField>
+                            <FormField label="Giờ xong">
+                                <input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} className="form-input" />
+                            </FormField>
                         </div>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Giờ</label>
-                            <input
-                                type="time"
-                                value={dueTime}
-                                onChange={e => setDueTime(e.target.value)}
-                                style={{ width: '100%', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                            />
-                        </div>
-                    </div>
-                )}
+                    )}
 
-                {timeType === 'range' && (
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Từ ngày</label>
-                            <input
-                                type="date"
-                                value={fromDate}
-                                onChange={e => setFromDate(e.target.value)}
-                                style={{ width: '100%', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                            />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Đến ngày</label>
-                            <input
-                                type="date"
-                                value={toDate}
-                                onChange={e => setToDate(e.target.value)}
-                                style={{ width: '100%', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                            />
-                        </div>
-                        <div style={{ width: '100px' }}>
-                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Giờ xong</label>
-                            <input
-                                type="time"
-                                value={dueTime}
-                                onChange={e => setDueTime(e.target.value)}
-                                style={{ width: '100%', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {timeType === 'recurrence' && (
-                    <div style={{ padding: '15px', background: '#f5f7fa', borderRadius: '8px', border: '1px solid #e0e4e8' }}>
-                        <div style={{ marginBottom: '10px' }}>
-                            <label style={{ marginRight: '15px', fontWeight: 'bold' }}>Tần suất:</label>
-                            {['weekly', 'monthly', 'yearly'].map(f => (
-                                <label key={f} style={{ marginRight: '15px', cursor: 'pointer' }}>
-                                    <input
-                                        type="radio"
-                                        name="freq"
-                                        value={f}
-                                        checked={recurrenceFreq === f}
-                                        onChange={e => setRecurrenceFreq(e.target.value)}
-                                    /> {f === 'weekly' ? 'Hàng tuần' : f === 'monthly' ? 'Hàng tháng' : 'Hàng năm'}
-                                </label>
-                            ))}
-                        </div>
-
-                        {recurrenceFreq === 'weekly' && (
-                            <div style={{ marginBottom: '10px' }}>
-                                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Chọn thứ trong tuần:</label>
-                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                    {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map((day, idx) => (
-                                        <button
-                                            key={idx}
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedDays(prev =>
-                                                    prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx]
-                                                );
-                                            }}
-                                            style={{
-                                                padding: '5px 12px',
-                                                borderRadius: '4px',
-                                                border: '1px solid #ccc',
-                                                background: selectedDays.includes(idx) ? '#1976d2' : '#fff',
-                                                color: selectedDays.includes(idx) ? '#fff' : '#000',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s'
-                                            }}
-                                        >
-                                            {day}
-                                        </button>
+                    {timeType === 'recurrence' && (
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
+                            {/* Frequency */}
+                            <div>
+                                <span className="text-sm font-semibold text-gray-700 mr-3">Tần suất:</span>
+                                <div className="inline-flex gap-4 mt-1">
+                                    {[{ v: 'weekly', l: 'Hàng tuần' }, { v: 'monthly', l: 'Hàng tháng' }, { v: 'yearly', l: 'Hàng năm' }].map(f => (
+                                        <label key={f.v} className="inline-flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+                                            <input type="radio" name="freq" value={f.v} checked={recurrenceFreq === f.v} onChange={e => setRecurrenceFreq(e.target.value)} className="w-4 h-4 text-primary-600 focus:ring-primary-500" />
+                                            {f.l}
+                                        </label>
                                     ))}
                                 </div>
                             </div>
-                        )}
 
-                        {recurrenceFreq === 'monthly' && (
-                            <div style={{ marginBottom: '10px' }}>
-                                <label style={{ marginRight: '10px', fontWeight: 'bold' }}>Hoàn thành vào ngày:</label>
-                                <input
-                                    type="number"
-                                    min="1" max="31"
-                                    value={dayOfMonth}
-                                    onChange={e => setDayOfMonth(parseInt(e.target.value))}
-                                    style={{ width: '60px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }}
-                                />
-                                <span style={{ marginLeft: '5px' }}>hàng tháng</span>
-                            </div>
-                        )}
-
-                        {recurrenceFreq === 'yearly' && (
-                            <div style={{ marginBottom: '10px' }}>
-                                <label style={{ marginRight: '10px', fontWeight: 'bold' }}>Chọn ngày cố định (Ngày/Tháng):</label>
-                                <input
-                                    type="text"
-                                    placeholder="DD/MM (VD: 31/12)"
-                                    value={specificDate}
-                                    onChange={e => setSpecificDate(e.target.value)}
-                                    style={{ width: '150px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px' }}
-                                />
-                            </div>
-                        )}
-
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Giờ hoàn thành trong ngày</label>
-                            <input
-                                type="time"
-                                value={dueTime}
-                                onChange={e => setDueTime(e.target.value)}
-                                style={{ width: '120px', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {/* Priority */}
-                <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Mức độ ưu tiên</label>
-                    <div style={{ display: 'flex', gap: '20px' }}>
-                        <label>
-                            <input
-                                type="radio"
-                                name="priority"
-                                value="high"
-                                checked={priority === 'high'}
-                                onChange={e => setPriority(e.target.value)}
-                            /> Cao
-                        </label>
-                        <label>
-                            <input
-                                type="radio"
-                                name="priority"
-                                value="normal"
-                                checked={priority === 'normal'}
-                                onChange={e => setPriority(e.target.value)}
-                            /> Trung bình
-                        </label>
-                        <label>
-                            <input
-                                type="radio"
-                                name="priority"
-                                value="low"
-                                checked={priority === 'low'}
-                                onChange={e => setPriority(e.target.value)}
-                            /> Thấp
-                        </label>
-                    </div>
-                </div>
-
-                {/* Supervisor Selection - ONLY for Admin/Manager/Assigner */}
-                {(userProfile?.role !== 'staff') && (
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Người giám sát</label>
-                        <select
-                            value={supervisorId}
-                            onChange={e => setSupervisorId(e.target.value)}
-                            style={{ width: '100%', padding: '8px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
-                        >
-                            <option value="">-- Không có người giám sát --</option>
-                            {allUsers
-                                .filter(u => {
-                                    // 1. EXCLUDE ASSIGNEES
-                                    if (assigneeUids.includes(u.uid)) return false;
-
-                                    // 2. Role-based constraints
-                                    const myRole = userProfile?.role || 'staff';
-
-                                    if (myRole === 'admin' || myRole === 'manager') {
-                                        // Manager/Admin: Can pick ANYONE (except assignees)
-                                        return true;
-                                    }
-
-                                    if (myRole === 'asigner') {
-                                        // Assigner: Can pick anyone EXCEPT Managers
-                                        if (u.role === 'manager') return false;
-                                        return true;
-                                    }
-
-                                    return true;
-                                })
-                                .map(u => (
-                                    <option key={u.uid} value={u.uid}>
-                                        {u.fullName || u.displayName || u.name} {u.role === 'manager' ? '(Trưởng khoa)' : ''}
-                                        {u.uid === currentUser.uid ? ' (Tôi)' : ''}
-                                    </option>
-                                ))}
-                        </select>
-                        <small style={{ color: '#666', display: 'block', marginTop: '5px' }}>
-                            * Người giám sát không thể là người được giao việc.
-                        </small>
-                    </div>
-                )}
-
-                {/* Assignees */}
-                <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Giao cho nhân viên <span style={{ color: 'red' }}>*</span></label>
-
-                    {userProfile?.role === 'staff' ? (
-                        <div style={{ padding: '10px', background: '#e3f2fd', borderRadius: '4px', border: '1px solid #90caf9', color: '#0d47a1' }}>
-                            ✓ Công việc sẽ được giao cho chính bạn ({userProfile.fullName || 'Tôi'}).
-                        </div>
-                    ) : (
-                        loading || fetchingUsers ? <p>Đang tải danh sách nhân viên...</p> : (
-                            <div style={{ border: '1px solid #ccc', padding: '10px', maxHeight: '150px', overflowY: 'auto', borderRadius: '4px' }}>
-                                {users.map(u => (
-                                    <div key={u.uid} style={{ marginBottom: '5px' }}>
-                                        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={assigneeUids.includes(u.uid)}
-                                                onChange={() => toggleAssignee(u.uid)}
-                                                style={{ marginRight: '10px' }}
-                                            />
-                                            {u.fullName || u.displayName || u.name || u.email || u.uid}
-                                        </label>
+                            {/* Weekly days */}
+                            {recurrenceFreq === 'weekly' && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Chọn thứ trong tuần:</label>
+                                    <div className="flex gap-2 flex-wrap">
+                                        {DAY_LABELS.map((day, idx) => (
+                                            <button
+                                                key={idx} type="button"
+                                                onClick={() => setSelectedDays(prev => prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx])}
+                                                className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors min-h-[36px] ${
+                                                    selectedDays.includes(idx)
+                                                        ? 'bg-primary-600 text-white border-primary-600'
+                                                        : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'
+                                                }`}
+                                            >
+                                                {day}
+                                            </button>
+                                        ))}
                                     </div>
-                                ))}
-                                {users.length === 0 && <p style={{ fontStyle: 'italic' }}>Không tìm thấy nhân viên nào.</p>}
-                            </div>
-                        )
+                                </div>
+                            )}
+
+                            {/* Monthly */}
+                            {recurrenceFreq === 'monthly' && (
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm font-semibold text-gray-700">Hoàn thành vào ngày:</label>
+                                    <input type="number" min="1" max="31" value={dayOfMonth} onChange={e => setDayOfMonth(parseInt(e.target.value))} className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-primary-500 focus:border-primary-500" />
+                                    <span className="text-sm text-gray-500">hàng tháng</span>
+                                </div>
+                            )}
+
+                            {/* Yearly */}
+                            {recurrenceFreq === 'yearly' && (
+                                <FormField label="Chọn ngày cố định (Ngày/Tháng):">
+                                    <input type="text" placeholder="DD/MM (VD: 31/12)" value={specificDate} onChange={e => setSpecificDate(e.target.value)} className="form-input w-40" />
+                                </FormField>
+                            )}
+
+                            <FormField label="Giờ hoàn thành trong ngày">
+                                <input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} className="form-input w-32" />
+                            </FormField>
+                        </div>
                     )}
                 </div>
 
-                {/* Alert Flag */}
-                <div>
-                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontWeight: 'bold' }}>
+                {/* Card: Assignment */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5 mb-4">
+                    {/* Priority */}
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Mức độ ưu tiên</label>
+                        <div className="flex gap-5">
+                            {PRIORITY_OPTIONS.map(opt => (
+                                <label key={opt.value} className="inline-flex items-center gap-2 cursor-pointer text-sm">
+                                    <input type="radio" name="priority" value={opt.value} checked={priority === opt.value} onChange={e => setPriority(e.target.value)} className="w-4 h-4 text-primary-600 focus:ring-primary-500" />
+                                    <span className={opt.color}>{opt.label}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Supervisor */}
+                    {userProfile?.role !== 'staff' && (
+                        <FormField label="Người giám sát">
+                            <select value={supervisorId} onChange={e => setSupervisorId(e.target.value)} className="form-input">
+                                <option value="">-- Không có người giám sát --</option>
+                                {allUsers
+                                    .filter(u => {
+                                        if (assigneeUids.includes(u.uid)) return false;
+                                        const myRole = userProfile?.role || 'staff';
+                                        if (myRole === 'admin' || myRole === 'manager') return true;
+                                        if (myRole === 'asigner') { if (u.role === 'manager') return false; return true; }
+                                        return true;
+                                    })
+                                    .map(u => (
+                                        <option key={u.uid} value={u.uid}>
+                                            {u.fullName || u.displayName || u.name} {u.role === 'manager' ? '(Trưởng khoa)' : ''}{u.uid === currentUser.uid ? ' (Tôi)' : ''}
+                                        </option>
+                                    ))}
+                            </select>
+                            <p className="text-xs text-gray-400 mt-1">* Người giám sát không thể là người được giao việc.</p>
+                        </FormField>
+                    )}
+
+                    {/* Assignees */}
+                    <FormField label="Giao cho nhân viên" required>
+                        {userProfile?.role === 'staff' ? (
+                            <div className="flex items-center gap-2 p-3 bg-primary-50 text-primary-700 border border-primary-200 rounded-lg text-sm font-medium">
+                                ✓ Công việc sẽ được giao cho chính bạn ({userProfile.fullName || 'Tôi'}).
+                            </div>
+                        ) : (
+                            fetchingUsers ? (
+                                <div className="flex items-center gap-2 py-3 text-sm text-gray-400">
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Đang tải danh sách...
+                                </div>
+                            ) : (
+                                <div className="border border-gray-200 rounded-lg max-h-[160px] overflow-y-auto divide-y divide-gray-100">
+                                    {users.length === 0 ? (
+                                        <p className="px-3 py-4 text-sm text-gray-400 italic text-center">Không tìm thấy nhân viên nào.</p>
+                                    ) : (
+                                        users.map(u => (
+                                            <label key={u.uid} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={assigneeUids.includes(u.uid)}
+                                                    onChange={() => toggleAssignee(u.uid)}
+                                                    className="w-4 h-4 rounded text-primary-600 focus:ring-primary-500"
+                                                />
+                                                <span className="text-sm text-gray-700">{u.fullName || u.displayName || u.name || u.email || u.uid}</span>
+                                            </label>
+                                        ))
+                                    )}
+                                </div>
+                            )
+                        )}
+                    </FormField>
+
+                    {/* Alert flag */}
+                    <label className="flex items-center gap-3 cursor-pointer p-3 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
                         <input
                             type="checkbox"
                             checked={alertFlag}
                             onChange={e => setAlertFlag(e.target.checked)}
-                            style={{ marginRight: '10px' }}
+                            className="w-4 h-4 rounded text-red-600 focus:ring-red-500"
                         />
-                        <span style={{ color: 'red' }}>Gắn cờ cảnh báo (Gấp)</span>
+                        <span className="text-sm font-semibold text-red-600 flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4" /> Gắn cờ cảnh báo (Gấp)
+                        </span>
                     </label>
                 </div>
 
                 {/* Submit */}
-                <div style={{ marginTop: '20px' }}>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        style={{
-                            padding: '10px 20px',
-                            background: '#1976d2',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '1em'
-                        }}
-                    >
-                        {loading ? "Đang xử lý..." : "Giao việc ngay"}
-                    </button>
-                </div>
-
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 text-white font-semibold rounded-xl transition-colors min-h-[48px] flex items-center justify-center gap-2 shadow-sm"
+                >
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                    {loading ? "Đang xử lý..." : "Giao việc ngay"}
+                </button>
             </form>
+        </div>
+    );
+}
+
+function FormField({ label, required, children }) {
+    return (
+        <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                {label} {required && <span className="text-red-500">*</span>}
+            </label>
+            {children}
         </div>
     );
 }
