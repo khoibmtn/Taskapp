@@ -5,7 +5,7 @@ import { useConversation } from "../../hooks/useConversation";
 import { usePresence } from "../../hooks/usePresence";
 import { useSendMessage } from "../../hooks/useSendMessage";
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -75,6 +75,12 @@ export default function TaskChatOverlay({ taskId, taskTitle, participants, onClo
                         createdAt: serverTimestamp(),
                         updatedAt: serverTimestamp(),
                     });
+                } else {
+                    // Update taskTitle on existing conversations that don't have it
+                    const convSnap2 = await getDoc(convRef);
+                    if (convSnap2.exists() && !convSnap2.data().taskTitle && taskTitle) {
+                        await updateDoc(convRef, { taskTitle });
+                    }
                 }
 
                 setConversationId(convId);

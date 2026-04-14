@@ -91,7 +91,7 @@ export default function DirectMessages() {
     const activeChatName = activeConv ? getConversationName(activeConv) : "";
 
     return (
-        <div className="h-[calc(100dvh-3.5rem-4rem)] lg:h-[calc(100dvh-3.5rem)] flex bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="h-[calc(100dvh-3.5rem-4rem-2rem)] lg:h-[calc(100dvh-3.5rem-3rem)] flex bg-white rounded-xl border border-gray-200 overflow-hidden">
             {/* ═══ Conversation List ═══ */}
             <div className={`
                 w-full lg:w-80 lg:border-r border-gray-200 flex flex-col flex-shrink-0
