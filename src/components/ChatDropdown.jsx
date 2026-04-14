@@ -50,7 +50,8 @@ export default function ChatDropdown({ conversations, totalUnread, currentUid })
 
         if (conv.type === "task" && conv.taskId) {
             // Navigate to Dashboard with openChat param → Dashboard opens chat panel
-            navigate(`/app?openChat=${conv.taskId}`);
+            const title = encodeURIComponent(conv.taskTitle || "Công việc");
+            navigate(`/app?openChat=${conv.taskId}&chatTitle=${title}`);
         } else {
             // DM → open messages page with this conversation
             navigate(`/app/messages/${conv.id}`);

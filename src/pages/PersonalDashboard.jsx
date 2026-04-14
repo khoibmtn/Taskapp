@@ -29,19 +29,16 @@ export default function PersonalDashboard() {
     // Handle ?openChat=taskId from ChatDropdown
     useEffect(() => {
         const openChatTaskId = searchParams.get('openChat');
-        if (openChatTaskId && tasksCache.all.length > 0) {
-            const task = tasksCache.all.find(t => t.id === openChatTaskId);
-            if (task) {
-                const allAssigneeUids = task.assignees ? Object.keys(task.assignees) : [];
-                const participants = [...new Set([...allAssigneeUids, task.supervisorId, task.createdBy].filter(Boolean))];
-                setActiveChatTaskId(task.id);
-                setActiveChatTitle(task.title);
-                setActiveChatParticipants(participants);
-            }
-            // Clear the param so it doesn't re-trigger
+        const openChatTitle = searchParams.get('chatTitle');
+        if (openChatTaskId) {
+            // Open chat panel directly — TaskChatOverlay will find/create the conversation
+            setActiveChatTaskId(openChatTaskId);
+            setActiveChatTitle(openChatTitle || "Công việc");
+            setActiveChatParticipants([currentUser?.uid].filter(Boolean));
+            // Clear params
             setSearchParams({}, { replace: true });
         }
-    }, [searchParams, tasksCache.all]);
+    }, [searchParams, currentUser]);
 
     const PAGE_SIZE = 20;
 
