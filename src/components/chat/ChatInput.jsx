@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Paperclip, X, Loader2, Image as ImageIcon, FileText, Smile } from "lucide-react";
+import EmojiPicker from "./EmojiPicker";
 
 const ALLOWED_TYPES = [
     "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -11,14 +12,6 @@ const ALLOWED_TYPES = [
 ];
 const MAX_SIZE = 5 * 1024 * 1024;
 
-// Common emoji list
-const EMOJI_LIST = [
-    "😊", "😂", "🤣", "❤️", "👍", "👏", "🙏", "🔥",
-    "✅", "❌", "⚠️", "📌", "📎", "💡", "🎉", "👀",
-    "😅", "😢", "😭", "🤔", "😤", "🙄", "💪", "🤝",
-    "📝", "📋", "🏥", "💊", "🩺", "🔬", "⏰", "📞",
-];
-
 export default function ChatInput({ onSendText, onSendFile, sending, uploadProgress }) {
     const [text, setText] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
@@ -27,25 +20,11 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
     const [showEmoji, setShowEmoji] = useState(false);
     const fileInputRef = useRef(null);
     const textareaRef = useRef(null);
-    const emojiRef = useRef(null);
 
     // Focus textarea on mount
     useEffect(() => {
         textareaRef.current?.focus();
     }, []);
-
-    // Close emoji picker on outside click
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (emojiRef.current && !emojiRef.current.contains(e.target)) {
-                setShowEmoji(false);
-            }
-        };
-        if (showEmoji) {
-            document.addEventListener("mousedown", handleClickOutside);
-        }
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [showEmoji]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -59,7 +38,6 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
             } catch (err) {
                 setError(err.message || "Gửi file thất bại");
             }
-            // Re-focus textarea after send
             setTimeout(() => textareaRef.current?.focus(), 50);
             return;
         }
@@ -71,7 +49,6 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
             } catch (err) {
                 setError(err.message || "Gửi tin nhắn thất bại");
             }
-            // Re-focus textarea after send
             setTimeout(() => textareaRef.current?.focus(), 50);
         }
     };
@@ -91,8 +68,6 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
         }
 
         setSelectedFile(file);
-
-        // Create preview for images
         if (file.type.startsWith("image/")) {
             const reader = new FileReader();
             reader.onload = (e) => setFilePreview(e.target.result);
@@ -100,8 +75,6 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
         } else {
             setFilePreview(null);
         }
-
-        // Clear input
         e.target.value = "";
     };
 
@@ -118,16 +91,15 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
         }
     };
 
-    const insertEmoji = (emoji) => {
+    const handleEmojiSelect = (emoji) => {
         setText(prev => prev + emoji);
-        setShowEmoji(false);
         textareaRef.current?.focus();
     };
 
     const isImage = selectedFile?.type?.startsWith("image/");
 
     return (
-        <div className="border-t border-gray-200 bg-white">
+        <div className="border-t border-gray-200 bg-white relative">
             {/* File preview */}
             {selectedFile && (
                 <div className="px-3 pt-2">
@@ -174,26 +146,16 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
                 </div>
             )}
 
-            {/* Emoji picker */}
+            {/* Emoji picker (positioned above input) */}
             {showEmoji && (
-                <div ref={emojiRef} className="absolute bottom-16 left-2 right-2 bg-white border border-gray-200 rounded-xl shadow-lg p-2 z-20">
-                    <div className="grid grid-cols-8 gap-1">
-                        {EMOJI_LIST.map((emoji) => (
-                            <button
-                                key={emoji}
-                                type="button"
-                                onClick={() => insertEmoji(emoji)}
-                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-100 rounded-lg transition-colors"
-                            >
-                                {emoji}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                <EmojiPicker
+                    onSelect={handleEmojiSelect}
+                    onClose={() => setShowEmoji(false)}
+                />
             )}
 
             {/* Input area */}
-            <form onSubmit={handleSubmit} className="flex items-end gap-1.5 p-2 relative">
+            <form onSubmit={handleSubmit} className="flex items-end gap-1.5 p-2">
                 <input
                     ref={fileInputRef}
                     type="file"
