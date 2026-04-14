@@ -208,7 +208,7 @@ export default function Register() {
                                 value={formData.nickname}
                                 onChange={e => setFormData({ ...formData, nickname: e.target.value })}
                                 className={`${inputClass} lowercase`}
-                                placeholder="lynh_190"
+                                placeholder="nickname"
                             />
                         </div>
 

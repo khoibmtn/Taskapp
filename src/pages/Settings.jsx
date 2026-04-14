@@ -372,7 +372,7 @@ export default function Settings() {
                                                 value={nickname}
                                                 onChange={(e) => setNickname(e.target.value)}
                                                 className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 bg-gray-50 focus:bg-white transition-colors font-medium text-gray-900 lowercase"
-                                                placeholder="bacsikhoi"
+                                                placeholder="nickname"
                                             />
                                         </div>
                                         <p className="text-xs text-gray-500 mt-1.5 ml-1">
