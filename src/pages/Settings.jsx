@@ -26,7 +26,7 @@ export default function Settings() {
 
     useEffect(() => {
         if (userProfile) {
-            setFullName(userProfile.displayName || "");
+            setFullName(userProfile.fullName || userProfile.displayName || "");
             setPhone(userProfile.phone || "");
             setNickname(userProfile.nickname || "");
             setAvatarId(userProfile.avatarId || "default_user");
@@ -129,6 +129,7 @@ export default function Settings() {
                     
                     // Update user
                     transaction.update(userRef, {
+                        fullName: fullName.trim(),
                         displayName: fullName.trim(),
                         phone: finalPhone,
                         nickname: finalNickname,
@@ -139,6 +140,7 @@ export default function Settings() {
             } else {
                 // Just update normal fields
                 await updateDoc(doc(db, "users", currentUser.uid), {
+                    fullName: fullName.trim(),
                     displayName: fullName.trim(),
                     phone: finalPhone,
                     avatarId: avatarId,

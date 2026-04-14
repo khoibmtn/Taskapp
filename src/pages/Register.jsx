@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, query, where, getDocs, setDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, setDoc, doc, serverTimestamp, getDoc, runTransaction } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { ClipboardCheck, CheckCircle, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -10,6 +10,7 @@ export default function Register() {
     const navigate = useNavigate();
     const [formData, setFormData] = useState({
         fullName: "",
+        nickname: "",
         phone: "",
         email: "",
         departmentId: "",
@@ -49,10 +50,17 @@ export default function Register() {
         e.preventDefault();
         setLoading(true);
 
-        const { fullName, phone, email, departmentId, position, password, confirmPassword } = formData;
+        const { fullName, nickname, phone, email, departmentId, position, password, confirmPassword } = formData;
 
         if (!fullName || !phone || !departmentId || !password) {
             toast.error("Vui lòng điền đầy đủ thông tin bắt buộc.");
+            setLoading(false);
+            return;
+        }
+        
+        let finalNickname = nickname ? nickname.trim().toLowerCase() : "";
+        if (finalNickname && !/^[a-z0-9_]{3,20}$/.test(finalNickname)) {
+            toast.error("Nickname phải từ 3-20 kí tự, chỉ gồm chữ thường, số, dấu gạch dưới.");
             setLoading(false);
             return;
         }
@@ -87,22 +95,42 @@ export default function Register() {
                 }
             }
 
+            if (finalNickname) {
+                const nickSnap = await getDoc(doc(db, "nicknames", finalNickname));
+                if (nickSnap.exists()) {
+                    throw new Error("Nickname này đã có người sử dụng. Vui lòng chọn tên khác!");
+                }
+            }
+
             const authEmail = `${normalizedPhone}@task.app`;
             const userCredential = await createUserWithEmailAndPassword(auth, authEmail, paddedPassword);
             const user = userCredential.user;
 
-            await setDoc(doc(db, "users", user.uid), {
-                fullName,
-                phone: normalizedPhone,
-                phoneNumber: normalizedPhone,
-                email: (email && email.trim()) || null,
-                authEmail: authEmail,
-                departmentId,
-                departmentIds: [departmentId],
-                position,
-                role: "staff",
-                status: "pending",
-                createdAt: serverTimestamp()
+            await runTransaction(db, async (transaction) => {
+                if (finalNickname) {
+                    const newNicknameRef = doc(db, "nicknames", finalNickname);
+                    const newNickDoc = await transaction.get(newNicknameRef);
+                    if (newNickDoc.exists()) {
+                        throw new Error("Nickname này vừa bị người khác đăng ký.");
+                    }
+                    transaction.set(newNicknameRef, { uid: user.uid, createdAt: serverTimestamp() });
+                }
+
+                transaction.set(doc(db, "users", user.uid), {
+                    fullName,
+                    displayName: fullName,
+                    nickname: finalNickname,
+                    phone: normalizedPhone,
+                    phoneNumber: normalizedPhone,
+                    email: (email && email.trim()) || null,
+                    authEmail: authEmail,
+                    departmentId,
+                    departmentIds: [departmentId],
+                    position,
+                    role: "staff",
+                    status: "pending",
+                    createdAt: serverTimestamp()
+                });
             });
 
             setSuccess(true);
@@ -165,6 +193,19 @@ export default function Register() {
                                 onChange={e => setFormData({ ...formData, fullName: e.target.value })}
                                 required
                                 className={inputClass}
+                            />
+                        </div>
+                        
+                        <div>
+                            <label className={labelClass}>
+                                Nickname <span className="text-gray-400 font-normal">(Không bắt buộc)</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={formData.nickname}
+                                onChange={e => setFormData({ ...formData, nickname: e.target.value })}
+                                className={`${inputClass} lowercase`}
+                                placeholder="lynh_190"
                             />
                         </div>
 
