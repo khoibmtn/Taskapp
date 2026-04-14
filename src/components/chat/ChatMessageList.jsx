@@ -3,7 +3,7 @@ import ChatBubble from "./ChatBubble";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
-export default function ChatMessageList({ messages, loading, hasMore, loadMore, conversationId }) {
+export default function ChatMessageList({ messages, loading, hasMore, loadMore, conversationId, bgClass }) {
     const { currentUser } = useAuth();
     const bottomRef = useRef(null);
     const containerRef = useRef(null);
@@ -43,7 +43,7 @@ export default function ChatMessageList({ messages, loading, hasMore, loadMore, 
 
     if (messages.length === 0) {
         return (
-            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+            <div className={`flex-1 flex items-center justify-center text-gray-400 text-sm ${bgClass || ''}`}>
                 Chưa có tin nhắn nào. Hãy bắt đầu cuộc trò chuyện!
             </div>
         );
@@ -53,7 +53,7 @@ export default function ChatMessageList({ messages, loading, hasMore, loadMore, 
         <div
             ref={containerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5"
+            className={`flex-1 overflow-y-auto px-3 py-3 space-y-0.5 ${bgClass || ''}`}
         >
             {hasMore && (
                 <div className="text-center py-2">

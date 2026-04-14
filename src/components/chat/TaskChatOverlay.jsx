@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
+import { CHAT_BG_MAP } from "../../utils/themeConstants";
 
 /**
  * Full-screen chat overlay for mobile / Side panel for desktop.
@@ -128,6 +129,7 @@ export default function TaskChatOverlay({ taskId, taskTitle, participants, onClo
                 hasMore={hasMore}
                 loadMore={loadMore}
                 conversationId={conversationId}
+                bgClass={CHAT_BG_MAP[userProfile?.chatSettings?.taskBg || 'default']}
             />
 
             {/* Input */}

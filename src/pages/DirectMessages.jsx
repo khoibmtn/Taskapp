@@ -8,6 +8,7 @@ import { usePresence } from "../hooks/usePresence";
 import { useSendMessage } from "../hooks/useSendMessage";
 import ChatMessageList from "../components/chat/ChatMessageList";
 import ChatInput from "../components/chat/ChatInput";
+import { CHAT_BG_MAP } from "../utils/themeConstants";
 import NewChatModal from "../components/chat/NewChatModal";
 
 function formatRelativeTime(timestamp) {
@@ -306,6 +307,13 @@ export default function DirectMessages() {
                             hasMore={hasMore}
                             loadMore={loadMore}
                             conversationId={activeConvId}
+                            bgClass={
+                                CHAT_BG_MAP[
+                                    activeConvId && activeChatName.startsWith('Task') 
+                                      ? (userProfile?.chatSettings?.taskBg || 'default')
+                                      : (userProfile?.chatSettings?.dmBg || 'default')
+                                ]
+                            }
                         />
 
                         {/* Input */}
