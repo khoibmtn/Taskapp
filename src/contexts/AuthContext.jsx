@@ -67,8 +67,23 @@ export function AuthProvider({ children }) {
             if (user) {
                 const docRef = doc(db, "users", user.uid);
 
-                try {
-                    const docSnap = await getDoc(docRef);
+                // 1. Immediately attach listener so UI can stop "Loading..."
+                unsubscribeProfile = onSnapshot(docRef, (snap) => {
+                    if (snap.exists()) {
+                        setUserProfile(snap.data());
+                    } else {
+                        setError("Profile disconnected.");
+                        setUserProfile(null);
+                    }
+                    setLoading(false);
+                }, (err) => {
+                    console.error("Profile listen error:", err);
+                    setError(err.message);
+                    setLoading(false);
+                });
+
+                // 2. Perform migration checks asynchronously WITHOUT blocking thread
+                getDoc(docRef).then(async (docSnap) => {
                     if (docSnap.exists()) {
                         const data = docSnap.data();
                         const isPolluted = data.email && data.email.endsWith('@task.app');
@@ -86,9 +101,8 @@ export function AuthProvider({ children }) {
                                 selectedDepartmentId: data.selectedDepartmentId || (initialDeptIds.length > 0 ? initialDeptIds[0] : ""),
                                 position: data.position || ""
                             };
-                            await updateDoc(docRef, updates);
+                            await updateDoc(docRef, updates).catch(console.error);
                         }
-                        // Non-blocking — don't await
                         setupNotifications(user.uid);
                     } else {
                         const initialProfile = {
@@ -100,25 +114,9 @@ export function AuthProvider({ children }) {
                             departmentIds: [],
                             createdAt: serverTimestamp()
                         };
-                        await setDoc(docRef, initialProfile);
+                        await setDoc(docRef, initialProfile).catch(console.error);
                     }
-                } catch (err) {
-                    console.error("Migration/Setup error:", err);
-                }
-
-                unsubscribeProfile = onSnapshot(docRef, (snap) => {
-                    if (snap.exists()) {
-                        setUserProfile(snap.data());
-                    } else {
-                        setError("Profile disconnected.");
-                        setUserProfile(null);
-                    }
-                    setLoading(false);
-                }, (err) => {
-                    console.error("Profile listen error:", err);
-                    setError(err.message);
-                    setLoading(false);
-                });
+                }).catch(err => console.error("Migration/Setup error:", err));
 
             } else {
                 setUserProfile(null);

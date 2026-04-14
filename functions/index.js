@@ -247,6 +247,8 @@ exports.checkDeadlines = onSchedule("every 1 hours", async (event) => {
 
     tasksSnap.forEach(doc => {
         const task = doc.data();
+        if (task.isDeadlineReminderSent) return;
+
         const taskId = doc.id;
         const payload = {
             type: "task_due_soon",
@@ -256,6 +258,10 @@ exports.checkDeadlines = onSchedule("every 1 hours", async (event) => {
 
         const assignees = Object.keys(task.assignees || {});
         promises.push(...assignees.map(uid => sendNotificationToUser(uid, payload, taskId)));
+        
+        promises.push(taskDb.collection("tasks").doc(taskId).update({
+            isDeadlineReminderSent: true
+        }));
     });
 
     return Promise.all(promises);
