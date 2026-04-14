@@ -78,11 +78,14 @@ export default function Settings() {
         setSuccessMsg("");
         
         let finalNickname = nickname.trim().toLowerCase();
+        if (finalNickname.startsWith('@')) {
+            finalNickname = finalNickname.substring(1);
+        }
         let finalPhone = phone.trim() ? normalizePhone(phone) : "";
 
         if (finalNickname) {
              if (!/^[a-z0-9_]{3,20}$/.test(finalNickname)) {
-                 setErrorMsg("Nickname phải từ 3-20 kí tự, chỉ gồm chữ thường, số và dấu gạch dưới.");
+                 setErrorMsg("Nickname ít nhất 3 ký tự, chỉ gồm chữ thường, số, dấu gạch dưới.");
                  setIsLoading(false);
                  return;
              }

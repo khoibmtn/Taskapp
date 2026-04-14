@@ -59,8 +59,11 @@ export default function Register() {
         }
         
         let finalNickname = nickname ? nickname.trim().toLowerCase() : "";
+        if (finalNickname.startsWith('@')) {
+            finalNickname = finalNickname.substring(1);
+        }
         if (finalNickname && !/^[a-z0-9_]{3,20}$/.test(finalNickname)) {
-            toast.error("Nickname phải từ 3-20 kí tự, chỉ gồm chữ thường, số, dấu gạch dưới.");
+            toast.error("Nickname ít nhất 3 ký tự, chỉ gồm chữ thường, số, dấu gạch dưới.");
             setLoading(false);
             return;
         }
