@@ -207,22 +207,23 @@ export default function AppLayout() {
             </aside>
 
             {/* ═══ Main Content ═══ */}
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 min-h-0 relative">
                 {/* Mobile header */}
-                <header className="lg:hidden flex items-center justify-between h-14 px-4 bg-white border-b border-gray-200 sticky top-0 z-30">
-                    <div className="flex items-center gap-3">
+                <header className="lg:hidden flex items-center justify-between h-14 px-4 bg-white border-b border-gray-200 sticky top-0 z-30 flex-shrink-0">
+                    <div className="flex items-center gap-2 min-w-0">
                         <button
                             onClick={() => setSidebarOpen(true)}
-                            className="p-2 -ml-2 rounded-lg hover:bg-gray-100"
+                            className="p-2 -ml-2 rounded-lg hover:bg-gray-100 flex-shrink-0"
                         >
                             <Menu className="w-5 h-5 text-gray-600" />
                         </button>
-                        <div className="flex items-center gap-2">
-                            <ClipboardCheck className="w-5 h-5 text-primary-600" />
-                            <span className="font-heading font-bold text-gray-900">TaskApp</span>
+                        <div className="flex items-center gap-1.5 truncate">
+                            <span className="text-sm text-gray-600 truncate max-w-[120px] sm:max-w-[200px]" title={userProfile?.fullName}>
+                                Xin chào, <strong className="text-gray-900">{userProfile?.fullName?.split(" ").pop() || 'User'}</strong>
+                            </span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                         <ChatDropdown
                             conversations={chatConversations}
                             totalUnread={chatUnread}
@@ -238,13 +239,13 @@ export default function AppLayout() {
                 </header>
 
                 {/* Desktop header */}
-                <header className="hidden lg:flex items-center justify-between h-14 px-6 bg-white border-b border-gray-200">
-                    <div className="text-sm text-gray-500">
+                <header className="hidden lg:flex items-center justify-between h-14 px-6 bg-white border-b border-gray-200 sticky top-0 z-30 flex-shrink-0">
+                    <div className="text-sm text-gray-500 truncate mr-4">
                         {myDepartments.length === 1 && (
-                            <span>Khoa/Phòng: <strong className="text-gray-700">{myDepartments[0]?.name}</strong></span>
+                            <span className="truncate">Khoa/Phòng: <strong className="text-gray-700">{myDepartments[0]?.name}</strong></span>
                         )}
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 lg:gap-4 flex-shrink-0 min-w-0">
                         <ChatDropdown
                             conversations={chatConversations}
                             totalUnread={chatUnread}
@@ -256,14 +257,14 @@ export default function AppLayout() {
                             markAllAsRead={markAllAsRead}
                             markOneAsRead={markOneAsRead}
                         />
-                        <div className="h-5 w-px bg-gray-200" />
-                        <span className="text-sm text-gray-600">
+                        <div className="h-5 w-px bg-gray-200 flex-shrink-0" />
+                        <span className="text-sm text-gray-600 truncate max-w-[150px] xl:max-w-[250px]" title={userProfile?.fullName}>
                             Xin chào, <strong className="text-gray-900">{userProfile?.fullName || 'User'}</strong>
                         </span>
                     </div>
                 </header>
 
-                <main className="flex-1 p-4 lg:p-6 overflow-auto pb-safe lg:pb-6">
+                <main className="flex-1 p-4 lg:p-6 overflow-auto pb-safe lg:pb-6 relative">
                     <Outlet />
                 </main>
             </div>
