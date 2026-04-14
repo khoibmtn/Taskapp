@@ -1,27 +1,25 @@
 # Session Notes
 
-## Session 2026-04-13
+## Session 2026-04-14
 
 ### What was done
-- Investigated and resolved a critical mobile app crash (infinite loading loop on iOS Safari) initiated by calling `getMessaging()` synchronously. Applied a dynamic import strategy protecting FCM execution on unsupported browsers.
-- Diagnosed and fixed iOS Web Push limitations, implementing the `Urgency: high` header, `fcm_options.link`, and direct `push` handling in the PWA service worker to ensure reliable background delivery.
-- Unified the UI/UX notification count logic. Created a new React hook `useNotifications` to share logic between the dashboard sidebar badge and top-nav notification bell.
-- Integrated `navigator.setAppBadge()` into the `useNotifications` hook so the native iOS/OS home screen app logo accurately reflects the in-app unread count instead of a raw accumulated push center count. 
+- Finalized and fixed the comprehensive Chat `@` mention autocomplete capability (`ChatInput`), preventing complete page crashes caused by missing dependency declarations (`showEmoji` and `useMemo`).
+- Standardized how `ChatBubble` dynamically replaces `@tag` raw data from Firestore with the `fullName` lookup values using safe regex text splits.
+- Restructured `firestore.rules` to correctly handle targeted, rate-limited cross-collection lookups for Nickname and Phone validation logic.
+- Transformed the `Register.jsx` component by mandating the Nickname field (`required`) and introducing robust real-time (`onBlur`) duplicate validation for Nickname and PhoneNumber without requiring a formal submit rejection cycle.
+- Added top-level React Error Boundary shielding for components (`ChatBubble` & `ChatInput`) that were prone to silent render failures crashing the entire UI ungracefully.
+- Uploaded and attached Firebase Storage logic allowing Chat to safely transmit File & Image binaries seamlessly across direct messages.
 
 ### Decisions made
-- Removed legacy `tasks.seenBy` functionality in favor of using the robust `notifications` tracking DB structure exclusively.
-- Implemented deep fallback guards, opting to initialize Firestore using strictly safe APIs (`initializeFirestore`, distinct from the deprecated `enableIndexedDbPersistence`) ensuring zero infinite loads globally.
-- Kept Apple's native "from TaskApp" attribution text appended to PWA push notifications; acknowledged platform design restrictions instead of trying to hack them.
-- Abstracted native OS Select controls out in favor of `FirebaseDropdown` to push the user interface strictly toward modern standards.
+- We opted to inject a standard Error Boundary inside the component boundaries (`ChatBubble`, `ChatInput`) rather than allowing errors to cascade up blindly.
+- To handle Firebase access controls securely yet support open Registration Validation, we bypassed cloud-function overhead by utilizing `allow read: if request.query.limit <= 2;` strictly for querying nickname duplication.
+- Mention Data payload decisions: Sent payloads embed the actual text tag (i.e. `Hello @john_doe!`) along with an accompanying array of mapping objects (`mentions: [{uid, nickname, fullName}]`) to future-proof any changes a user might make to their displayName.
 
 ### Pending items
-- Abstract environment secrets (VAPID key) away from hard-coding (`AuthContext.jsx`).
-- Consider extending `<FirebaseDropdown/>` universally across remaining primitive elements (like forms). 
+- Explore further system-wide integrations for the chat system such as task overlay injection so conversations organically connect back to clinical/business entity states.
 
 ### Key files modified
-- `src/firebase.js`
-- `src/contexts/AuthContext.jsx`
-- `src/hooks/useNotifications.js`
-- `src/components/AppLayout.jsx`
-- `functions/index.js`
-- `public/firebase-messaging-sw.js`
+- `src/components/chat/ChatInput.jsx`
+- `src/components/chat/ChatBubble.jsx`
+- `src/pages/Register.jsx`
+- `firestore.rules`
