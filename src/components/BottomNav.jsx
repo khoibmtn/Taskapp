@@ -1,9 +1,10 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, BarChart3, PlusCircle, Bell, Menu } from "lucide-react";
+import { LayoutDashboard, BarChart3, PlusCircle, Bell, Menu, MessageSquare } from "lucide-react";
 import { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
+import { useChatList } from "../hooks/useChatList";
 
 export default function BottomNav({ userRole }) {
     const navigate = useNavigate();
@@ -11,6 +12,7 @@ export default function BottomNav({ userRole }) {
     const { currentUser } = useAuth();
     const [unreadCount, setUnreadCount] = useState(0);
     const [menuOpen, setMenuOpen] = useState(false);
+    const { totalUnread: chatUnread } = useChatList(currentUser?.uid);
 
     const isManagerRole = ["manager", "admin", "asigner"].includes(userRole);
 
@@ -40,6 +42,7 @@ export default function BottomNav({ userRole }) {
             : []
         ),
         { id: "create", icon: PlusCircle, label: "Tạo việc", path: "/app/create-task", fab: true },
+        { id: "chat", icon: MessageSquare, label: "Tin nhắn", path: "/app/messages", badge: chatUnread },
         { id: "notif", icon: Bell, label: "Thông báo", path: "/app/notifications", badge: unreadCount },
         { id: "menu", icon: Menu, label: "Menu", action: "sidebar" },
     ];

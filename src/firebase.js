@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCo_PfvtnCLxqhD1IX3Aqs8l06UmMvzvAs",
@@ -17,6 +18,7 @@ const auth = getAuth(app);
 
 // Named database 'taskapp' — simple, reliable init
 const db = getFirestore(app, "taskapp");
+const storage = getStorage(app);
 
 // Messaging — fully lazy loaded via dynamic import
 // firebase/messaging module can crash on import in iOS Safari / unsupported browsers
@@ -36,4 +38,4 @@ async function initMessaging() {
 
 const messagingReady = initMessaging();
 
-export { app, auth, db, messaging, messagingReady };
+export { app, auth, db, storage, messaging, messagingReady };

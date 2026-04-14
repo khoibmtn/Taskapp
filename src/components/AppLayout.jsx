@@ -7,23 +7,25 @@ import NotificationDropdown from "./NotificationDropdown";
 import BottomNav from "./BottomNav";
 import {
     LayoutDashboard, BarChart3, PlusCircle, ClipboardList,
-    Users, Shield, Settings, Menu, X, LogOut, ClipboardCheck
+    Users, Shield, Settings, Menu, X, LogOut, ClipboardCheck, MessageSquare
 } from "lucide-react";
 import FirebaseDropdown from "./FirebaseDropdown";
 import { useNotifications } from "../hooks/useNotifications";
+import { useChatList } from "../hooks/useChatList";
 
 const SIDEBAR_ITEMS = [
     { to: "/app", icon: LayoutDashboard, label: "Dashboard", roles: null },
     { to: "/manager/dashboard", icon: BarChart3, label: "Dashboard Quản lý", roles: ["manager", "admin", "asigner"] },
     { to: "/app/create-task", icon: PlusCircle, label: "Giao việc mới", roles: null, highlight: true },
     { to: "/app/tasks", icon: ClipboardList, label: "Công việc", roles: null },
+    { to: "/app/messages", icon: MessageSquare, label: "Tin nhắn", roles: null, chatBadge: true },
     { to: "/manager/personnel", icon: Users, label: "Quản lý Nhân sự", roles: ["manager"] },
     { to: "/admin/management", icon: Shield, label: "Quản lý hệ thống", roles: ["admin"], danger: true },
     { to: "/app/settings", icon: Settings, label: "Cài đặt", roles: null },
 ];
 
 export default function AppLayout() {
-    const { userProfile, switchDepartment } = useAuth();
+    const { currentUser, userProfile, switchDepartment } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [myDepartments, setMyDepartments] = useState([]);
@@ -31,6 +33,8 @@ export default function AppLayout() {
 
     // Shared notification state — same source for bell icon + Dashboard badge
     const { notifications, unreadCount, markAllAsRead, markOneAsRead } = useNotifications();
+    // Chat unread count for badge
+    const { totalUnread: chatUnread } = useChatList(userProfile?.uid || currentUser?.uid);
 
     // Listen for toggle-sidebar event from BottomNav
     useEffect(() => {
@@ -143,7 +147,7 @@ export default function AppLayout() {
 
                 {/* Navigation items */}
                 <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                    {visibleItems.map(({ to, icon: Icon, label, highlight, danger }) => (
+                    {visibleItems.map(({ to, icon: Icon, label, highlight, danger, chatBadge }) => (
                         <button
                             key={to}
                             onClick={() => handleNavClick(to)}
@@ -165,6 +169,11 @@ export default function AppLayout() {
                             {to === '/app' && unreadCount > 0 && (
                                 <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-danger-500 text-white text-xs font-bold flex items-center justify-center">
                                     {unreadCount > 99 ? '99+' : unreadCount}
+                                </span>
+                            )}
+                            {chatBadge && chatUnread > 0 && (
+                                <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center">
+                                    {chatUnread > 99 ? '99+' : chatUnread}
                                 </span>
                             )}
                         </button>
@@ -213,6 +222,17 @@ export default function AppLayout() {
                         </div>
                     </div>
                     <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => navigate('/app/messages')}
+                            className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                        >
+                            <MessageSquare className="w-5 h-5" />
+                            {chatUnread > 0 && (
+                                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-primary-500 text-white text-[10px] font-bold rounded-full">
+                                    {chatUnread > 9 ? '9+' : chatUnread}
+                                </span>
+                            )}
+                        </button>
                         <NotificationDropdown
                             notifications={notifications}
                             unreadCount={unreadCount}
@@ -230,6 +250,17 @@ export default function AppLayout() {
                         )}
                     </div>
                     <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => navigate('/app/messages')}
+                            className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                        >
+                            <MessageSquare className="w-5 h-5" />
+                            {chatUnread > 0 && (
+                                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-primary-500 text-white text-[10px] font-bold rounded-full">
+                                    {chatUnread > 9 ? '9+' : chatUnread}
+                                </span>
+                            )}
+                        </button>
                         <NotificationDropdown
                             notifications={notifications}
                             unreadCount={unreadCount}

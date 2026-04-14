@@ -11,6 +11,7 @@ import TaskDetail from './pages/TaskDetail';
 import Tasks from './pages/Tasks';
 import Settings from './pages/Settings';
 import Notifications from './pages/Notifications';
+import DirectMessages from './pages/DirectMessages';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/AppLayout';
 import AdminRoute from './components/AdminRoute';
@@ -49,6 +50,8 @@ function App() {
             <Route path="tasks/:taskId/edit" element={<EditTask />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="notifications" element={<Notifications />} />
+            <Route path="messages" element={<DirectMessages />} />
+            <Route path="messages/:conversationId" element={<DirectMessages />} />
             <Route path="settings" element={<Settings />} />
           </Route>
 

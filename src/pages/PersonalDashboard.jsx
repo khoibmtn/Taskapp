@@ -5,6 +5,9 @@ import { useAuth } from "../contexts/AuthContext";
 import { db } from "../firebase";
 import { getTasksQuery, getTaskCount } from "../utils/queryUtils";
 import { AlertTriangle, Calendar, Clock, ChevronRight, Loader2, UserPen, Users2, Eye } from "lucide-react";
+import TaskChatIcon from "../components/chat/TaskChatIcon";
+import TaskChatOverlay from "../components/chat/TaskChatOverlay";
+import { useChatList } from "../hooks/useChatList";
 
 export default function PersonalDashboard() {
     const { currentUser, userProfile } = useAuth();
@@ -17,6 +20,10 @@ export default function PersonalDashboard() {
     const [lastDoc, setLastDoc] = useState(null);
     const [hasMore, setHasMore] = useState(true);
     const [filterStatus, setFilterStatus] = useState('open');
+    const [activeChatTaskId, setActiveChatTaskId] = useState(null);
+    const [activeChatTitle, setActiveChatTitle] = useState('');
+    const [activeChatParticipants, setActiveChatParticipants] = useState([]);
+    const { conversations: chatConversations } = useChatList(currentUser?.uid);
 
     const PAGE_SIZE = 20;
 
@@ -284,7 +291,19 @@ export default function PersonalDashboard() {
                         <h4 className={`font-medium text-sm leading-snug flex-1 ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                             {task.title}
                         </h4>
-                        <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />
+                        <div className="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
+                            <TaskChatIcon
+                                unreadCount={chatConversations?.find(c => c.id === `task_${task.id}`)?.myUnread || 0}
+                                onClick={() => {
+                                    const allAssigneeUids = task.assignees ? Object.keys(task.assignees) : [];
+                                    const participants = [...new Set([...allAssigneeUids, task.supervisorId, task.createdBy].filter(Boolean))];
+                                    setActiveChatTaskId(task.id);
+                                    setActiveChatTitle(task.title);
+                                    setActiveChatParticipants(participants);
+                                }}
+                            />
+                            <ChevronRight className="w-4 h-4 text-gray-300" />
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
@@ -388,6 +407,32 @@ export default function PersonalDashboard() {
                         )}
                     </button>
                 </div>
+            )}
+
+            {/* Chat Overlay / Panel */}
+            {activeChatTaskId && (
+                <>
+                    {/* Mobile: overlay */}
+                    <div className="lg:hidden">
+                        <TaskChatOverlay
+                            taskId={activeChatTaskId}
+                            taskTitle={activeChatTitle}
+                            participants={activeChatParticipants}
+                            onClose={() => setActiveChatTaskId(null)}
+                            mode="overlay"
+                        />
+                    </div>
+                    {/* Desktop: side panel */}
+                    <div className="hidden lg:block fixed right-0 top-14 bottom-0 w-80 z-40 shadow-lg">
+                        <TaskChatOverlay
+                            taskId={activeChatTaskId}
+                            taskTitle={activeChatTitle}
+                            participants={activeChatParticipants}
+                            onClose={() => setActiveChatTaskId(null)}
+                            mode="panel"
+                        />
+                    </div>
+                </>
             )}
         </div>
     );

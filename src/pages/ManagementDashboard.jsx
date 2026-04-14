@@ -4,6 +4,9 @@ import { collection, query, where, onSnapshot, getDocs, limit, startAfter } from
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { getTasksQuery, getTaskCount } from "../utils/queryUtils";
+import TaskChatIcon from "../components/chat/TaskChatIcon";
+import TaskChatOverlay from "../components/chat/TaskChatOverlay";
+import { useChatList } from "../hooks/useChatList";
 
 export default function ManagementDashboard() {
     const { userProfile, currentUser } = useAuth();
@@ -25,6 +28,10 @@ export default function ManagementDashboard() {
     const [thisWeek, setThisWeek] = useState([]);
     const [otherTasks, setOtherTasks] = useState([]);
     const [assigneeGroups, setAssigneeGroups] = useState({});
+    const [activeChatTaskId, setActiveChatTaskId] = useState(null);
+    const [activeChatTitle, setActiveChatTitle] = useState('');
+    const [activeChatParticipants, setActiveChatParticipants] = useState([]);
+    const { conversations: chatConversations } = useChatList(currentUser?.uid);
 
     const PAGE_SIZE = 20;
 
@@ -234,7 +241,19 @@ export default function ManagementDashboard() {
                 boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
             }}>
                 <Link to={`/app/tasks/${task.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '5px', fontSize: '1.05em' }}>{task.title}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '5px', fontSize: '1.05em', flex: 1 }}>{task.title}</div>
+                        <TaskChatIcon
+                            unreadCount={chatConversations?.find(c => c.id === `task_${task.id}`)?.myUnread || 0}
+                            onClick={() => {
+                                const allAssigneeUids = task.assignees ? Object.keys(task.assignees) : [];
+                                const participants = [...new Set([...allAssigneeUids, task.supervisorId, task.createdBy].filter(Boolean))];
+                                setActiveChatTaskId(task.id);
+                                setActiveChatTitle(task.title);
+                                setActiveChatParticipants(participants);
+                            }}
+                        />
+                    </div>
                     <div style={{ fontSize: '0.85em', color: '#555' }}>
                         <div style={{ marginBottom: '4px' }}>Hạn: {getDeadlineDisplay(task)}</div>
                         <div style={{ marginBottom: '4px' }}>Ngày giao: {task.createdAt?.seconds ? new Date(task.createdAt.seconds * 1000).toLocaleDateString('vi-VN') : 'N/A'}</div>
@@ -436,6 +455,30 @@ export default function ManagementDashboard() {
                                 color="#388e3c"
                             />
                         </div>
+                    </div>
+                </>
+            )}
+
+            {/* Chat Overlay / Panel */}
+            {activeChatTaskId && (
+                <>
+                    <div className="lg:hidden">
+                        <TaskChatOverlay
+                            taskId={activeChatTaskId}
+                            taskTitle={activeChatTitle}
+                            participants={activeChatParticipants}
+                            onClose={() => setActiveChatTaskId(null)}
+                            mode="overlay"
+                        />
+                    </div>
+                    <div className="hidden lg:block fixed right-0 top-14 bottom-0 w-80 z-40 shadow-lg">
+                        <TaskChatOverlay
+                            taskId={activeChatTaskId}
+                            taskTitle={activeChatTitle}
+                            participants={activeChatParticipants}
+                            onClose={() => setActiveChatTaskId(null)}
+                            mode="panel"
+                        />
                     </div>
                 </>
             )}

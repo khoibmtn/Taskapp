@@ -249,6 +249,20 @@ exports.onTaskUpdated = onDocumentUpdated(
             }
         }
 
+        // --- Sync Chat Participants if assignees/supervisor changed ---
+        const beforeAssigneeKeys = Object.keys(beforeData.assignees || {}).sort().join(",");
+        const afterAssigneeKeys = Object.keys(afterData.assignees || {}).sort().join(",");
+        const assigneesChanged = beforeAssigneeKeys !== afterAssigneeKeys;
+        const supervisorChanged = beforeData.supervisorId !== afterData.supervisorId;
+
+        if (assigneesChanged || supervisorChanged) {
+            notificationPromises.push(
+                syncChatParticipantsForTask(taskId, afterData).catch(err => {
+                    console.error(`Failed to sync chat participants for task ${taskId}:`, err);
+                })
+            );
+        }
+
         return Promise.all(notificationPromises);
     }
 );
@@ -404,3 +418,268 @@ exports.resetUserPassword = onCall({ region: "asia-southeast1" }, async (request
         throw new HttpsError("internal", "Lỗi khi reset mật khẩu: " + error.message);
     }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// CHAT FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Send FCM push for chat messages (without writing to notifications collection).
+ * Reuses token cleanup logic from sendNotificationToUser.
+ */
+async function sendChatPush(uid, senderName, messagePreview, conversationId, conversationType) {
+    if (!uid) return;
+
+    try {
+        const userDoc = await taskDb.collection("users").doc(uid).get();
+        if (!userDoc.exists) return;
+
+        const tokens = userDoc.data().fcmTokens || [];
+        if (tokens.length === 0) return;
+
+        const message = {
+            notification: {
+                title: senderName,
+                body: messagePreview
+            },
+            tokens: tokens,
+            webpush: {
+                headers: { Urgency: "high", TTL: "86400" },
+                notification: {
+                    icon: "/logo192.png",
+                    badge: "/logo192.png",
+                    vibrate: [200, 100, 200],
+                    renotify: true,
+                    tag: `chat_${conversationId}`,
+                    requireInteraction: false
+                },
+                fcm_options: {
+                    link: `/app/messages/${conversationId}`
+                }
+            },
+            data: {
+                type: "chat_message",
+                conversationId: conversationId,
+                conversationType: conversationType || "dm"
+            }
+        };
+
+        const response = await fcm.sendEachForMulticast(message);
+        console.log(`Chat push: ${response.successCount}/${tokens.length} to ${uid}`);
+
+        // Clean up invalid tokens
+        const invalidTokens = [];
+        response.responses.forEach((resp, idx) => {
+            if (!resp.success) {
+                const code = resp.error?.code;
+                if (code === "messaging/invalid-registration-token" ||
+                    code === "messaging/registration-token-not-registered") {
+                    invalidTokens.push(tokens[idx]);
+                }
+            }
+        });
+
+        if (invalidTokens.length > 0) {
+            const { FieldValue } = require("firebase-admin/firestore");
+            await taskDb.collection("users").doc(uid).update({
+                fcmTokens: FieldValue.arrayRemove(...invalidTokens)
+            });
+        }
+    } catch (error) {
+        console.error(`Chat push error for ${uid}:`, error);
+    }
+}
+
+/**
+ * Trigger: Khi có tin nhắn chat mới
+ * - Dedup guard (clientMessageId)
+ * - Check presence → skip push nếu user đang active
+ * - Increment unreadCounts cho inactive users
+ * - Gửi FCM push
+ * - Lazy cleanup presence stale
+ */
+exports.onChatMessage = onDocumentCreated(
+    { document: "conversations/{conversationId}/messages/{messageId}", database: "taskapp" },
+    async (event) => {
+        const messageData = event.data.data();
+        const conversationId = event.params.conversationId;
+        const senderUid = messageData.senderUid;
+
+        // Step 0: Dedup guard — check clientMessageId
+        const clientMsgId = messageData.clientMessageId;
+        if (clientMsgId) {
+            const messagesRef = taskDb
+                .collection("conversations").doc(conversationId)
+                .collection("messages");
+            const existing = await messagesRef
+                .where("clientMessageId", "==", clientMsgId)
+                .limit(2)
+                .get();
+
+            if (existing.size > 1) {
+                console.log(`Duplicate message detected: ${clientMsgId}, deleting`);
+                await event.data.ref.delete();
+                return;
+            }
+        }
+
+        // Step 1: Read conversation
+        const convRef = taskDb.collection("conversations").doc(conversationId);
+        const convSnap = await convRef.get();
+        if (!convSnap.exists) {
+            console.error(`Conversation ${conversationId} not found`);
+            return;
+        }
+
+        const convData = convSnap.data();
+        const participants = convData.participants || [];
+        const now = Date.now();
+
+        // Build message preview for push notification
+        let messagePreview = messageData.text || "";
+        if (messageData.type === "image") messagePreview = "[Ảnh]";
+        else if (messageData.type === "file") {
+            const fileName = messageData.attachments?.[0]?.name || "file";
+            messagePreview = `[File: ${fileName}]`;
+        }
+        if (messagePreview.length > 100) messagePreview = messagePreview.substring(0, 100) + "...";
+
+        // Step 2-3: Check presence + send push + increment unread
+        const updates = {};
+        const pushPromises = [];
+
+        for (const uid of participants) {
+            if (uid === senderUid) continue;
+
+            // Read presence
+            const presenceSnap = await taskDb.collection("presence").doc(uid).get();
+            const presence = presenceSnap.exists ? presenceSnap.data() : null;
+
+            const isActive = presence
+                && Array.isArray(presence.activeConversationIds)
+                && presence.activeConversationIds.includes(conversationId)
+                && presence.lastActiveAt?.toMillis() > (now - 30_000);
+
+            if (isActive) {
+                // User đang chat → skip push, skip increment
+                continue;
+            }
+
+            // Lazy cleanup: if lastActiveAt is stale but activeConversationIds not empty
+            if (presence
+                && Array.isArray(presence.activeConversationIds)
+                && presence.activeConversationIds.length > 0
+                && presence.lastActiveAt?.toMillis() <= (now - 30_000)) {
+                // Cleanup stale presence (fire and forget)
+                taskDb.collection("presence").doc(uid).update({
+                    activeConversationIds: [],
+                }).catch(() => {});
+            }
+
+            // Increment unread (fast path)
+            updates[`unreadCounts.${uid}`] = admin.firestore.FieldValue.increment(1);
+
+            // Send push
+            pushPromises.push(
+                sendChatPush(uid, messageData.senderName || "Ai đó", messagePreview, conversationId, convData.type)
+            );
+        }
+
+        // Step 4: Update lastMessage
+        updates.lastMessage = {
+            text: messagePreview,
+            senderUid: senderUid,
+            senderName: messageData.senderName || "",
+            createdAt: messageData.createdAt || admin.firestore.FieldValue.serverTimestamp()
+        };
+        updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        // Step 5: Batch write
+        await convRef.update(updates);
+        await Promise.all(pushPromises);
+
+        console.log(`Chat message processed: ${conversationId}/${event.params.messageId}`);
+    }
+);
+
+/**
+ * Sync chat participants khi task thay đổi assignees/supervisorId.
+ * Logic thêm vào cuối onTaskUpdated — xem exports.onTaskUpdated ở trên.
+ * Hàm riêng để tái sử dụng.
+ */
+async function syncChatParticipantsForTask(taskId, afterData) {
+    const convId = `task_${taskId}`;
+    const convRef = taskDb.collection("conversations").doc(convId);
+    const convSnap = await convRef.get();
+
+    // Nếu conversation chưa tồn tại (chưa ai mở chat) → skip
+    if (!convSnap.exists) return;
+
+    // Rebuild participants list from task data
+    const newParticipants = new Set();
+
+    // Creator
+    if (afterData.createdBy) newParticipants.add(afterData.createdBy);
+
+    // Assignees
+    const assignees = afterData.assignees || {};
+    Object.keys(assignees).forEach(uid => newParticipants.add(uid));
+
+    // Supervisor
+    if (afterData.supervisorId) newParticipants.add(afterData.supervisorId);
+
+    // Managers of department
+    if (afterData.departmentId) {
+        const managerSnap = await taskDb.collection("users")
+            .where("departmentId", "==", afterData.departmentId)
+            .where("role", "==", "manager")
+            .get();
+        managerSnap.docs.forEach(d => newParticipants.add(d.id));
+    }
+
+    // Admins
+    const adminSnap = await taskDb.collection("users").where("role", "==", "admin").get();
+    adminSnap.docs.forEach(d => newParticipants.add(d.id));
+
+    const newParticipantsArray = Array.from(newParticipants);
+    const oldParticipants = convSnap.data().participants || [];
+
+    // Build participantNames for new participants
+    const participantNames = convSnap.data().participantNames || {};
+    for (const uid of newParticipantsArray) {
+        if (!participantNames[uid]) {
+            const userDoc = await taskDb.collection("users").doc(uid).get();
+            if (userDoc.exists) {
+                participantNames[uid] = userDoc.data().fullName || uid;
+            }
+        }
+    }
+
+    // Remove names of removed participants
+    const removedUids = oldParticipants.filter(uid => !newParticipants.has(uid));
+    for (const uid of removedUids) {
+        delete participantNames[uid];
+    }
+
+    const updateData = {
+        participants: newParticipantsArray,
+        participantNames: participantNames,
+    };
+
+    // Clean up removed users' unread data
+    for (const uid of removedUids) {
+        updateData[`lastReadAt.${uid}`] = admin.firestore.FieldValue.delete();
+        updateData[`unreadCounts.${uid}`] = admin.firestore.FieldValue.delete();
+    }
+
+    // Initialize new users
+    const addedUids = newParticipantsArray.filter(uid => !oldParticipants.includes(uid));
+    for (const uid of addedUids) {
+        updateData[`lastReadAt.${uid}`] = admin.firestore.FieldValue.serverTimestamp();
+        updateData[`unreadCounts.${uid}`] = 0;
+    }
+
+    await convRef.update(updateData);
+    console.log(`Synced chat participants for task ${taskId}: +${addedUids.length} -${removedUids.length}`);
+}
+
