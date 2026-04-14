@@ -22,6 +22,7 @@ function ChatInput({ onSendText, onSendFile, sending, uploadProgress }) {
     const [allUsers, setAllUsers] = useState([]);
     const [mentionState, setMentionState] = useState(null); // { query: string, startIdx: number }
     const [mentionIndex, setMentionIndex] = useState(0);
+    const [showEmoji, setShowEmoji] = useState(false);
     const fileInputRef = useRef(null);
     const textareaRef = useRef(null);
     const listRef = useRef(null);
