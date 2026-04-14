@@ -27,20 +27,39 @@ export default function DirectMessages() {
     const navigate = useNavigate();
     const [activeConvId, setActiveConvId] = useState(paramConvId || null);
     const [searchQuery, setSearchQuery] = useState("");
+    const [activeTab, setActiveTab] = useState("dm"); // 'dm' or 'task'
     const [showNewChat, setShowNewChat] = useState(false);
     const [isMobileChat, setIsMobileChat] = useState(false);
 
     const { conversations, loading: listLoading } = useChatList(currentUser?.uid);
 
-    // Filter conversations
+    // Filter conversations based on search query AND active tab
     const filteredConversations = useMemo(() => {
-        if (!searchQuery.trim()) return conversations;
-        const q = searchQuery.toLowerCase();
-        return conversations.filter(c => {
-            const names = Object.values(c.participantNames || {});
-            return names.some(n => n.toLowerCase().includes(q));
-        });
-    }, [conversations, searchQuery]);
+        let result = conversations;
+        
+        // Filter by tab
+        if (activeTab === "task") {
+            result = result.filter(c => c.type === "task");
+        } else {
+            result = result.filter(c => !c.type || c.type !== "task");
+        }
+
+        // Filter by search
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(c => {
+                if (c.type === "task") {
+                    const title = c.taskTitle || `Task #${c.taskId?.slice(0, 6) || ''}`;
+                    return title.toLowerCase().includes(q);
+                } else {
+                    const names = Object.values(c.participantNames || {});
+                    return names.some(n => n.toLowerCase().includes(q));
+                }
+            });
+        }
+        
+        return result;
+    }, [conversations, searchQuery, activeTab]);
 
     // Active conversation data
     const activeConv = conversations.find(c => c.id === activeConvId);
@@ -97,27 +116,49 @@ export default function DirectMessages() {
                 w-full lg:w-80 lg:border-r border-gray-200 flex flex-col flex-shrink-0
                 ${isMobileChat ? "hidden lg:flex" : "flex"}
             `}>
-                {/* Header */}
-                <div className="p-3 border-b border-gray-100">
-                    <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-lg font-bold text-gray-900">Tin nhắn</h2>
+                {/* Header: Search + Tabs */}
+                <div className="border-b border-gray-100 flex flex-col pt-3">
+                    <div className="flex items-center gap-2 px-3 mb-3">
+                         <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Tìm kiếm..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50
+                                    focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 focus:bg-white transition-colors"
+                            />
+                        </div>
                         <button
                             onClick={() => setShowNewChat(true)}
-                            className="p-2 rounded-lg bg-primary-50 text-primary-600 hover:bg-primary-100 transition-colors"
+                            className="p-2 rounded-lg bg-primary-50 text-primary-600 hover:bg-primary-100 transition-colors flex-shrink-0"
                         >
-                            <Plus className="w-4 h-4" />
+                            <Plus className="w-5 h-5" />
                         </button>
                     </div>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Tìm kiếm..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg
-                                focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400"
-                        />
+
+                    <div className="flex px-3 gap-4">
+                        <button
+                            onClick={() => setActiveTab("dm")}
+                            className={`pb-2 text-sm font-semibold border-b-2 transition-colors ${
+                                activeTab === "dm" 
+                                    ? "border-primary-500 text-primary-600" 
+                                    : "border-transparent text-gray-500 hover:text-gray-700"
+                            }`}
+                        >
+                            Tin nhắn
+                        </button>
+                        <button
+                            onClick={() => setActiveTab("task")}
+                            className={`pb-2 text-sm font-semibold border-b-2 transition-colors ${
+                                activeTab === "task" 
+                                    ? "border-primary-500 text-primary-600" 
+                                    : "border-transparent text-gray-500 hover:text-gray-700"
+                            }`}
+                        >
+                            Công việc
+                        </button>
                     </div>
                 </div>
 
