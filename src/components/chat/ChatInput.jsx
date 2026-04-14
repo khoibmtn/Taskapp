@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Paperclip, X, Loader2, Image as ImageIcon, FileText, Smile } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../../firebase";
 
 const ALLOWED_TYPES = [
     "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -17,14 +19,52 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
     const [selectedFile, setSelectedFile] = useState(null);
     const [filePreview, setFilePreview] = useState(null);
     const [error, setError] = useState("");
-    const [showEmoji, setShowEmoji] = useState(false);
+    const [allUsers, setAllUsers] = useState([]);
+    const [mentionState, setMentionState] = useState(null); // { query: string, startIdx: number }
+    const [mentionIndex, setMentionIndex] = useState(0);
     const fileInputRef = useRef(null);
     const textareaRef = useRef(null);
+    const listRef = useRef(null);
+
+    // Fetch users for mentions on mount
+    useEffect(() => {
+        getDocs(collection(db, "users")).then(snap => {
+            setAllUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }).catch(err => console.error("Failed to load users for mentions", err));
+    }, []);
 
     // Focus textarea on mount
     useEffect(() => {
         textareaRef.current?.focus();
     }, []);
+
+    // Filter users based on query
+    const filteredMentions = React.useMemo(() => {
+        if (!mentionState) return [];
+        const q = mentionState.query.trim().toLowerCase();
+        return allUsers.filter(u => {
+            const fn = (u.fullName || "").toLowerCase();
+            const nn = (u.nickname || "").toLowerCase();
+            return fn.includes(q) || nn.includes(q);
+        }).slice(0, 10);
+    }, [mentionState, allUsers]);
+
+    // Keep highlighted index in bounds
+    useEffect(() => {
+        if (mentionIndex >= filteredMentions.length) {
+            setMentionIndex(Math.max(0, filteredMentions.length - 1));
+        }
+    }, [filteredMentions.length, mentionIndex]);
+
+    // Auto scroll list
+    useEffect(() => {
+        if (listRef.current) {
+            const activeEl = listRef.current.children[mentionIndex];
+            if (activeEl) {
+                activeEl.scrollIntoView({ block: "nearest" });
+            }
+        }
+    }, [mentionIndex]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -44,7 +84,22 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
 
         if (text.trim()) {
             try {
-                await onSendText(text);
+                // Extract mentions
+                const activeMentions = [];
+                if (text.includes('@')) {
+                    allUsers.forEach(u => {
+                        const tag = `@${u.nickname || (u.fullName || 'User').replace(/\s+/g, '')}`;
+                        if (text.includes(tag)) {
+                            activeMentions.push({
+                                uid: u.id,
+                                nickname: u.nickname || null,
+                                fullName: u.fullName || 'User'
+                            });
+                        }
+                    });
+                }
+
+                await onSendText(text, activeMentions);
                 setText("");
             } catch (err) {
                 setError(err.message || "Gửi tin nhắn thất bại");
@@ -84,10 +139,72 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
         setError("");
     };
 
+    const selectMention = (user) => {
+        if (!mentionState) return;
+        const tag = user.nickname ? user.nickname : (user.fullName || "User").replace(/\s+/g, "");
+        const before = text.slice(0, mentionState.startIdx - 1); // remove '@'
+        const insert = `@${tag} `;
+        
+        // Find where the query ends by finding cursor position or just replacing up to current text end
+        const cursor = textareaRef.current?.selectionStart || text.length;
+        const after = text.slice(cursor);
+
+        const newText = before + insert + after;
+        setText(newText);
+        setMentionState(null);
+        setMentionIndex(0);
+        
+        setTimeout(() => {
+            textareaRef.current?.focus();
+            const newPos = before.length + insert.length;
+            textareaRef.current?.setSelectionRange(newPos, newPos);
+        }, 50);
+    };
+
     const handleKeyDown = (e) => {
+        if (mentionState && filteredMentions.length > 0) {
+            if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setMentionIndex(prev => (prev > 0 ? prev - 1 : filteredMentions.length - 1));
+                return;
+            }
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setMentionIndex(prev => (prev < filteredMentions.length - 1 ? prev + 1 : 0));
+                return;
+            }
+            if (e.key === "Enter") {
+                e.preventDefault();
+                selectMention(filteredMentions[mentionIndex]);
+                return;
+            }
+            if (e.key === "Escape") {
+                e.preventDefault();
+                setMentionState(null);
+                return;
+            }
+        }
+
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSubmit(e);
+        }
+    };
+
+    const handleChange = (e) => {
+        const val = e.target.value;
+        setText(val);
+        
+        const cursorPos = e.target.selectionStart;
+        const textBeforeCursor = val.slice(0, cursorPos);
+        const match = textBeforeCursor.match(/(?:^|\s)@([^@\s]*)$/);
+
+        if (match) {
+            setMentionState({ query: match[1], startIdx: cursorPos - match[1].length });
+            setShowEmoji(false);
+        } else {
+            setMentionState(null);
+            setMentionIndex(0);
         }
     };
 
@@ -154,6 +271,30 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
                 />
             )}
 
+            {/* Mention Suggestions Popup */}
+            {mentionState && filteredMentions.length > 0 && (
+                <div className="absolute bottom-full left-0 w-full md:w-80 max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-t-xl shadow-lg z-50 mb-1" ref={listRef}>
+                    {filteredMentions.map((u, i) => (
+                        <div
+                            key={u.id}
+                            className={`flex items-center gap-3 p-2.5 cursor-pointer ${i === mentionIndex ? 'bg-primary-50' : 'hover:bg-gray-50'}`}
+                            onMouseEnter={() => setMentionIndex(i)}
+                            onClick={() => selectMention(u)}
+                        >
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center flex-shrink-0 text-primary-700 font-medium text-xs">
+                                {u.fullName?.charAt(0)?.toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-900 truncate">{u.fullName}</p>
+                                <p className="text-xs text-gray-500 truncate">
+                                    @{u.nickname || (u.fullName || '').replace(/\s+/g, '')}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Input area */}
             <form onSubmit={handleSubmit} className="flex items-end gap-1.5 p-2">
                 <input
@@ -187,7 +328,7 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
                 <textarea
                     ref={textareaRef}
                     value={text}
-                    onChange={(e) => setText(e.target.value)}
+                    onChange={handleChange}
                     onKeyDown={handleKeyDown}
                     placeholder={selectedFile ? "Thêm mô tả (tùy chọn)..." : "Nhập tin nhắn..."}
                     disabled={sending}

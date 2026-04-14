@@ -72,6 +72,36 @@ export default function ChatBubble({ message, isOwn, conversationId, onRetry }) 
         );
     }
 
+    const renderTextWithMentions = () => {
+        if (!text) return null;
+        if (!message.mentions || message.mentions.length === 0) {
+            return <p className="whitespace-pre-wrap break-words">{text}</p>;
+        }
+
+        // Build a regex matching all possible mention tags present in the message
+        const tags = message.mentions.map(m => `@${m.nickname || (m.fullName || 'User').replace(/\s+/g, '')}`);
+        // Escape characters just in case, though nickNames should be alphanumeric
+        const escapedTags = tags.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const regex = new RegExp(`(${escapedTags.join('|')})`, 'g');
+        
+        const parts = text.split(regex);
+        return (
+            <p className="whitespace-pre-wrap break-words">
+                {parts.map((part, i) => {
+                    const mention = message.mentions.find(m => `@${m.nickname || (m.fullName || 'User').replace(/\s+/g, '')}` === part);
+                    if (mention) {
+                        return (
+                            <span key={i} className={`font-semibold px-1 rounded mx-0.5 ${isOwn ? 'bg-white/20 text-white' : 'bg-primary-100/50 text-primary-700'}`}>
+                                {mention.fullName}
+                            </span>
+                        );
+                    }
+                    return <span key={i}>{part}</span>;
+                })}
+            </p>
+        );
+    };
+
     const time = formatTime(createdAt || clientCreatedAt);
 
     return (
@@ -116,7 +146,7 @@ export default function ChatBubble({ message, isOwn, conversationId, onRetry }) 
                     )}
 
                     {/* Text content */}
-                    {text && <p className="whitespace-pre-wrap break-words">{text}</p>}
+                    {text && renderTextWithMentions()}
                 </div>
 
                 {/* Context menu for own messages */}

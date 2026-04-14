@@ -33,7 +33,7 @@ export function useSendMessage(conversationId) {
         : null;
 
     // Send a text message
-    const sendText = useCallback(async (text) => {
+    const sendText = useCallback(async (text, mentions = []) => {
         if (!messagesRef || !text.trim() || !currentUser) return;
 
         setSending(true);
@@ -44,6 +44,7 @@ export function useSendMessage(conversationId) {
                 senderUid: currentUser.uid,
                 senderName: userProfile?.fullName || "User",
                 type: "text",
+                mentions: mentions,
                 attachments: [],
                 createdAt: serverTimestamp(),
                 clientCreatedAt: Date.now(),
