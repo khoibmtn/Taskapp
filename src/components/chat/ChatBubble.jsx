@@ -10,7 +10,7 @@ function formatTime(timestamp) {
     return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function ChatBubble({ message, isOwn, conversationId, onRetry }) {
+function ChatBubble({ message, isOwn, conversationId, onRetry }) {
     const { text, senderName, type, attachments, isDeleted, createdAt, clientCreatedAt } = message;
     const [showMenu, setShowMenu] = useState(false);
     const [confirming, setConfirming] = useState(null); // "delete" | "recall" | null
@@ -216,4 +216,25 @@ export default function ChatBubble({ message, isOwn, conversationId, onRetry }) 
             </div>
         </div>
     );
+}
+
+import React from "react";
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return <div className="text-red-500 bg-red-100 p-2 text-xs break-words">ChatBubble Error: {this.state.error.message}</div>;
+    }
+    return this.props.children;
+  }
+}
+
+export default function ChatBubbleWithErrorBoundary(props) {
+  return <ErrorBoundary><ChatBubble {...props} /></ErrorBoundary>;
 }

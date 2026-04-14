@@ -14,7 +14,7 @@ const ALLOWED_TYPES = [
 ];
 const MAX_SIZE = 5 * 1024 * 1024;
 
-export default function ChatInput({ onSendText, onSendFile, sending, uploadProgress }) {
+function ChatInput({ onSendText, onSendFile, sending, uploadProgress }) {
     const [text, setText] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
     const [filePreview, setFilePreview] = useState(null);
@@ -359,4 +359,25 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
             </form>
         </div>
     );
+}
+
+import React from "react";
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return <div className="text-red-500 bg-red-100 p-2 text-xs break-words">ChatInput Error: {this.state.error.message}</div>;
+    }
+    return this.props.children;
+  }
+}
+
+export default function ChatInputWithErrorBoundary(props) {
+  return <ErrorBoundary><ChatInput {...props} /></ErrorBoundary>;
 }
