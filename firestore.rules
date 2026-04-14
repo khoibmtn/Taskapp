@@ -65,8 +65,8 @@ service cloud.firestore {
     // --- OTHER COLLECTIONS ---
     
     match /users/{uid} {
-      // Allow limited public queries for login lookup (max 1 result)
-      allow list: if request.query.limit == 1;
+      // Allow limited public queries for login/register lookup, and allow authenticated users to list
+      allow list: if isAuthenticated() || (request.query.limit <= 2);
       
       allow read: if isAuthenticated();
       allow write: if hasRole('admin') || request.auth.uid == uid;
