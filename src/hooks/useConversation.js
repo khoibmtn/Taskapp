@@ -55,18 +55,22 @@ export function useConversation(conversationId) {
         return () => unsubscribe();
     }, [conversationId, currentUser]);
 
-    // Mark as read on mount
+    // Mark as read — delayed to avoid race with Cloud Function increments
     useEffect(() => {
         if (!conversationId || !currentUser) return;
 
-        const convRef = doc(db, "conversations", conversationId);
-        updateDoc(convRef, {
-            [`lastReadAt.${currentUser.uid}`]: serverTimestamp(),
-            [`unreadCounts.${currentUser.uid}`]: 0,
-        }).catch(() => {
-            // Conversation may not exist yet — that's OK
-        });
-    }, [conversationId, currentUser]);
+        const timer = setTimeout(() => {
+            const convRef = doc(db, "conversations", conversationId);
+            updateDoc(convRef, {
+                [`lastReadAt.${currentUser.uid}`]: serverTimestamp(),
+                [`unreadCounts.${currentUser.uid}`]: 0,
+            }).catch(() => {
+                // Conversation may not exist yet — that's OK
+            });
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [conversationId, currentUser, messages.length]);
 
     // Load older messages (pagination)
     const loadMore = useCallback(async () => {

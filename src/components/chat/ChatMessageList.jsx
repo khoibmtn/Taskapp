@@ -3,7 +3,7 @@ import ChatBubble from "./ChatBubble";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
-export default function ChatMessageList({ messages, loading, hasMore, loadMore }) {
+export default function ChatMessageList({ messages, loading, hasMore, loadMore, conversationId }) {
     const { currentUser } = useAuth();
     const bottomRef = useRef(null);
     const containerRef = useRef(null);
@@ -71,6 +71,7 @@ export default function ChatMessageList({ messages, loading, hasMore, loadMore }
                     key={msg.id || msg.clientMessageId}
                     message={msg}
                     isOwn={msg.senderUid === currentUser?.uid}
+                    conversationId={conversationId}
                 />
             ))}
 

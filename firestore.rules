@@ -93,6 +93,10 @@ service cloud.firestore {
         allow create: if isAuthenticated() &&
           request.auth.uid == request.resource.data.senderUid &&
           request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+        allow update: if isAuthenticated() &&
+          request.auth.uid == resource.data.senderUid;
+        allow delete: if isAuthenticated() &&
+          request.auth.uid == resource.data.senderUid;
       }
     }
 

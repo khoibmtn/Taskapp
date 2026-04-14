@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Send, Paperclip, X, Loader2, Image as ImageIcon, FileText } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Send, Paperclip, X, Loader2, Image as ImageIcon, FileText, Smile } from "lucide-react";
 
 const ALLOWED_TYPES = [
     "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -11,12 +11,41 @@ const ALLOWED_TYPES = [
 ];
 const MAX_SIZE = 5 * 1024 * 1024;
 
+// Common emoji list
+const EMOJI_LIST = [
+    "😊", "😂", "🤣", "❤️", "👍", "👏", "🙏", "🔥",
+    "✅", "❌", "⚠️", "📌", "📎", "💡", "🎉", "👀",
+    "😅", "😢", "😭", "🤔", "😤", "🙄", "💪", "🤝",
+    "📝", "📋", "🏥", "💊", "🩺", "🔬", "⏰", "📞",
+];
+
 export default function ChatInput({ onSendText, onSendFile, sending, uploadProgress }) {
     const [text, setText] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
     const [filePreview, setFilePreview] = useState(null);
     const [error, setError] = useState("");
+    const [showEmoji, setShowEmoji] = useState(false);
     const fileInputRef = useRef(null);
+    const textareaRef = useRef(null);
+    const emojiRef = useRef(null);
+
+    // Focus textarea on mount
+    useEffect(() => {
+        textareaRef.current?.focus();
+    }, []);
+
+    // Close emoji picker on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (emojiRef.current && !emojiRef.current.contains(e.target)) {
+                setShowEmoji(false);
+            }
+        };
+        if (showEmoji) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [showEmoji]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -30,6 +59,8 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
             } catch (err) {
                 setError(err.message || "Gửi file thất bại");
             }
+            // Re-focus textarea after send
+            setTimeout(() => textareaRef.current?.focus(), 50);
             return;
         }
 
@@ -40,6 +71,8 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
             } catch (err) {
                 setError(err.message || "Gửi tin nhắn thất bại");
             }
+            // Re-focus textarea after send
+            setTimeout(() => textareaRef.current?.focus(), 50);
         }
     };
 
@@ -83,6 +116,12 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
             e.preventDefault();
             handleSubmit(e);
         }
+    };
+
+    const insertEmoji = (emoji) => {
+        setText(prev => prev + emoji);
+        setShowEmoji(false);
+        textareaRef.current?.focus();
     };
 
     const isImage = selectedFile?.type?.startsWith("image/");
@@ -135,8 +174,26 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
                 </div>
             )}
 
+            {/* Emoji picker */}
+            {showEmoji && (
+                <div ref={emojiRef} className="absolute bottom-16 left-2 right-2 bg-white border border-gray-200 rounded-xl shadow-lg p-2 z-20">
+                    <div className="grid grid-cols-8 gap-1">
+                        {EMOJI_LIST.map((emoji) => (
+                            <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => insertEmoji(emoji)}
+                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Input area */}
-            <form onSubmit={handleSubmit} className="flex items-end gap-1.5 p-2">
+            <form onSubmit={handleSubmit} className="flex items-end gap-1.5 p-2 relative">
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -154,7 +211,19 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
                     <Paperclip className="w-5 h-5" />
                 </button>
 
+                <button
+                    type="button"
+                    onClick={() => setShowEmoji(!showEmoji)}
+                    disabled={sending}
+                    className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
+                        showEmoji ? 'text-primary-500 bg-primary-50' : 'text-gray-400 hover:text-primary-500 hover:bg-primary-50'
+                    }`}
+                >
+                    <Smile className="w-5 h-5" />
+                </button>
+
                 <textarea
+                    ref={textareaRef}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     onKeyDown={handleKeyDown}

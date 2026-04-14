@@ -66,6 +66,7 @@ export default function TaskChatOverlay({ taskId, taskTitle, participants, onClo
                     await setDoc(convRef, {
                         type: "task",
                         taskId: taskId,
+                        taskTitle: taskTitle || "Công việc",
                         participants: allParticipants,
                         participantNames,
                         lastMessage: null,
@@ -120,6 +121,7 @@ export default function TaskChatOverlay({ taskId, taskTitle, participants, onClo
                 loading={loading || initializing}
                 hasMore={hasMore}
                 loadMore={loadMore}
+                conversationId={conversationId}
             />
 
             {/* Input */}

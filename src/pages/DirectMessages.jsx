@@ -73,20 +73,22 @@ export default function DirectMessages() {
         handleSelectConversation(convId);
     };
 
-    // Get other person's name for DM
-    const getOtherName = (conv) => {
-        if (!conv?.participantNames || !currentUser) return "Chat";
+    // Get display name for conversation
+    const getConversationName = (conv) => {
+        if (!conv || !currentUser) return "Chat";
+        // Task conversations: show task title
+        if (conv.type === "task") {
+            return conv.taskTitle || `Task #${conv.taskId?.slice(0, 6) || ''}`;
+        }
+        // DM: show other person's name
+        if (!conv.participantNames) return "Chat";
         const names = Object.entries(conv.participantNames);
         const other = names.find(([uid]) => uid !== currentUser.uid);
         return other?.[1] || "Chat";
     };
 
     // Get active chat header info
-    const activeChatName = activeConv
-        ? (activeConv.type === "task"
-            ? `Chat: Task`
-            : getOtherName(activeConv))
-        : "";
+    const activeChatName = activeConv ? getConversationName(activeConv) : "";
 
     return (
         <div className="h-[calc(100dvh-3.5rem-4rem)] lg:h-[calc(100dvh-3.5rem)] flex bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -136,9 +138,9 @@ export default function DirectMessages() {
                         </div>
                     ) : (
                         filteredConversations.map((conv) => {
-                            const otherName = getOtherName(conv);
+                            const displayName = getConversationName(conv);
                             const isActive = conv.id === activeConvId;
-                            const initial = otherName.charAt(0).toUpperCase();
+                            const initial = conv.type === 'task' ? 'T' : displayName.charAt(0).toUpperCase();
 
                             return (
                                 <button
@@ -151,16 +153,16 @@ export default function DirectMessages() {
                                 >
                                     <div className={`
                                         w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
-                                        ${conv.myUnread > 0 ? "bg-primary-100" : "bg-gray-100"}
+                                        ${conv.type === 'task' ? 'bg-teal-100' : conv.myUnread > 0 ? 'bg-primary-100' : 'bg-gray-100'}
                                     `}>
-                                        <span className={`font-semibold text-sm ${conv.myUnread > 0 ? "text-primary-700" : "text-gray-500"}`}>
+                                        <span className={`font-semibold text-sm ${conv.type === 'task' ? 'text-teal-700' : conv.myUnread > 0 ? 'text-primary-700' : 'text-gray-500'}`}>
                                             {initial}
                                         </span>
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between">
                                             <p className={`text-sm truncate ${conv.myUnread > 0 ? "font-bold text-gray-900" : "font-medium text-gray-700"}`}>
-                                                {otherName}
+                                                {displayName}
                                             </p>
                                             <span className="text-[10px] text-gray-400 flex-shrink-0 ml-2">
                                                 {formatRelativeTime(conv.lastMessage?.createdAt)}
@@ -216,6 +218,7 @@ export default function DirectMessages() {
                             loading={msgLoading}
                             hasMore={hasMore}
                             loadMore={loadMore}
+                            conversationId={activeConvId}
                         />
 
                         {/* Input */}

@@ -283,27 +283,29 @@ export default function PersonalDashboard() {
         const supervisorName = task.supervisorId ? getUserName(task.supervisorId) : null;
 
         return (
-            <Link to={`/app/tasks/${task.id}`} className="block">
-                <div className={`p-3.5 rounded-xl border transition-colors ${
-                    isCompleted ? 'bg-success-50 border-success-200' : 'bg-white border-gray-200 hover:border-primary-300'
-                }`}>
+            <div className={`p-3.5 rounded-xl border transition-colors relative ${
+                isCompleted ? 'bg-success-50 border-success-200' : 'bg-white border-gray-200 hover:border-primary-300'
+            }`}>
+                {/* Chat icon — positioned absolute top-right, OUTSIDE Link */}
+                <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5">
+                    <TaskChatIcon
+                        unreadCount={chatConversations?.find(c => c.id === `task_${task.id}`)?.myUnread || 0}
+                        onClick={() => {
+                            const allAssigneeUids = task.assignees ? Object.keys(task.assignees) : [];
+                            const participants = [...new Set([...allAssigneeUids, task.supervisorId, task.createdBy].filter(Boolean))];
+                            setActiveChatTaskId(task.id);
+                            setActiveChatTitle(task.title);
+                            setActiveChatParticipants(participants);
+                        }}
+                    />
+                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                </div>
+
+                <Link to={`/app/tasks/${task.id}`} className="block">
                     <div className="flex items-start justify-between gap-2 mb-2">
-                        <h4 className={`font-medium text-sm leading-snug flex-1 ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                        <h4 className={`font-medium text-sm leading-snug flex-1 pr-14 ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
                             {task.title}
                         </h4>
-                        <div className="flex items-center gap-0.5 flex-shrink-0 mt-0.5">
-                            <TaskChatIcon
-                                unreadCount={chatConversations?.find(c => c.id === `task_${task.id}`)?.myUnread || 0}
-                                onClick={() => {
-                                    const allAssigneeUids = task.assignees ? Object.keys(task.assignees) : [];
-                                    const participants = [...new Set([...allAssigneeUids, task.supervisorId, task.createdBy].filter(Boolean))];
-                                    setActiveChatTaskId(task.id);
-                                    setActiveChatTitle(task.title);
-                                    setActiveChatParticipants(participants);
-                                }}
-                            />
-                            <ChevronRight className="w-4 h-4 text-gray-300" />
-                        </div>
                     </div>
 
                     <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
@@ -344,8 +346,8 @@ export default function PersonalDashboard() {
                             )}
                         </div>
                     )}
-                </div>
-            </Link>
+                </Link>
+            </div>
         );
     };
 
