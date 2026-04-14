@@ -130,12 +130,14 @@ export default function DirectMessages() {
                                     focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 focus:bg-white transition-colors"
                             />
                         </div>
-                        <button
-                            onClick={() => setShowNewChat(true)}
-                            className="p-2 rounded-lg bg-primary-50 text-primary-600 hover:bg-primary-100 transition-colors flex-shrink-0"
-                        >
-                            <Plus className="w-5 h-5" />
-                        </button>
+                        {activeTab === "dm" && (
+                            <button
+                                onClick={() => setShowNewChat(true)}
+                                className="p-2 rounded-lg bg-primary-50 text-primary-600 hover:bg-primary-100 transition-colors flex-shrink-0"
+                            >
+                                <Plus className="w-5 h-5" />
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex px-3 gap-4">
@@ -170,12 +172,18 @@ export default function DirectMessages() {
                         <div className="p-8 text-center">
                             <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-2" />
                             <p className="text-sm text-gray-400">Chưa có cuộc trò chuyện nào</p>
-                            <button
-                                onClick={() => setShowNewChat(true)}
-                                className="mt-2 text-sm text-primary-500 hover:text-primary-600 font-medium"
-                            >
-                                Tạo cuộc trò chuyện mới
-                            </button>
+                            {activeTab === "dm" ? (
+                                <button
+                                    onClick={() => setShowNewChat(true)}
+                                    className="mt-2 text-sm text-primary-500 hover:text-primary-600 font-medium"
+                                >
+                                    Tạo cuộc trò chuyện mới
+                                </button>
+                            ) : (
+                                <p className="mt-2 text-xs text-gray-400">
+                                    Thảo luận sẽ xuất hiện khi bạn trao đổi trong các công việc được giao.
+                                </p>
+                            )}
                         </div>
                     ) : (
                         filteredConversations.map((conv) => {
