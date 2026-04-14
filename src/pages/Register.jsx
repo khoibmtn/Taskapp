@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, query, where, getDocs, setDoc, doc, serverTimestamp, getDoc, runTransaction } from "firebase/firestore";
+import { collection, query, where, getDocs, setDoc, doc, serverTimestamp, getDoc, runTransaction, limit } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { ClipboardCheck, CheckCircle, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -21,6 +21,8 @@ export default function Register() {
     const [departments, setDepartments] = useState([]);
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [nicknameError, setNicknameError] = useState("");
+    const [phoneError, setPhoneError] = useState("");
 
     useEffect(() => {
         async function fetchDepts() {
@@ -49,10 +51,12 @@ export default function Register() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
+        setNicknameError("");
+        setPhoneError("");
 
         const { fullName, nickname, phone, email, departmentId, position, password, confirmPassword } = formData;
 
-        if (!fullName || !phone || !departmentId || !password) {
+        if (!fullName || !nickname || !phone || !departmentId || !password) {
             toast.error("Vui lòng điền đầy đủ thông tin bắt buộc.");
             setLoading(false);
             return;
@@ -83,15 +87,15 @@ export default function Register() {
         }
 
         try {
-            const phoneQuery1 = query(collection(db, "users"), where("phone", "==", normalizedPhone));
-            const phoneQuery2 = query(collection(db, "users"), where("phoneNumber", "==", normalizedPhone));
+            const phoneQuery1 = query(collection(db, "users"), where("phone", "==", normalizedPhone), limit(1));
+            const phoneQuery2 = query(collection(db, "users"), where("phoneNumber", "==", normalizedPhone), limit(1));
             const [phoneSnap1, phoneSnap2] = await Promise.all([getDocs(phoneQuery1), getDocs(phoneQuery2)]);
             if (!phoneSnap1.empty || !phoneSnap2.empty) {
                 throw new Error("Số điện thoại này đã được sử dụng.");
             }
 
             if (email) {
-                const emailQuery = query(collection(db, "users"), where("email", "==", email));
+                const emailQuery = query(collection(db, "users"), where("email", "==", email), limit(1));
                 const emailSnap = await getDocs(emailQuery);
                 if (!emailSnap.empty) {
                     throw new Error("Email này đã được sử dụng.");
@@ -142,6 +146,46 @@ export default function Register() {
             console.error(err);
             toast.error(err.message.includes("auth/email-already-in-use") ? "Số điện thoại này đã được đăng ký." : err.message);
             setLoading(false);
+        }
+    };
+
+    const handleNicknameBlur = async () => {
+        setNicknameError("");
+        let finalNickname = formData.nickname ? formData.nickname.trim().toLowerCase() : "";
+        if (finalNickname.startsWith('@')) finalNickname = finalNickname.substring(1);
+        
+        if (finalNickname && !/^[a-z0-9_]{3,20}$/.test(finalNickname)) {
+            setNicknameError("Ít nhất 3 ký tự, chỉ gồm chữ thường, số, dấu gạch dưới.");
+            return;
+        }
+
+        if (finalNickname) {
+            try {
+                const docRef = doc(db, "nicknames", finalNickname);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    setNicknameError("Nickname này đã được sử dụng.");
+                }
+            } catch (err) {
+                console.error("Lỗi kiểm tra nickname:", err);
+            }
+        }
+    };
+
+    const handlePhoneBlur = async () => {
+        setPhoneError("");
+        const normalizedPhone = normalizePhone(formData.phone);
+        if (!normalizedPhone || normalizedPhone.length < 9) return;
+
+        try {
+            const phoneQuery1 = query(collection(db, "users"), where("phone", "==", normalizedPhone), limit(1));
+            const phoneQuery2 = query(collection(db, "users"), where("phoneNumber", "==", normalizedPhone), limit(1));
+            const [snap1, snap2] = await Promise.all([getDocs(phoneQuery1), getDocs(phoneQuery2)]);
+            if (!snap1.empty || !snap2.empty) {
+                setPhoneError("Số điện thoại này đã được sử dụng.");
+            }
+        } catch (err) {
+            console.error("Lỗi kiểm tra số điện thoại:", err);
         }
     };
 
@@ -200,16 +244,17 @@ export default function Register() {
                         </div>
                         
                         <div>
-                            <label className={labelClass}>
-                                Nickname <span className="text-gray-400 font-normal">(Không bắt buộc)</span>
-                            </label>
+                            <label className={labelClass}>Nickname <span className="text-danger-500">*</span></label>
                             <input
                                 type="text"
                                 value={formData.nickname}
                                 onChange={e => setFormData({ ...formData, nickname: e.target.value })}
-                                className={`${inputClass} lowercase`}
+                                onBlur={handleNicknameBlur}
+                                className={`${inputClass} lowercase ${nicknameError ? 'border-danger-500 bg-danger-50' : ''}`}
                                 placeholder="nickname"
+                                required
                             />
+                            {nicknameError && <p className="text-danger-500 text-xs mt-1 min-h-[16px]">{nicknameError}</p>}
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -220,9 +265,11 @@ export default function Register() {
                                     placeholder="09xxxxxxx"
                                     value={formData.phone}
                                     onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                    onBlur={handlePhoneBlur}
                                     required
-                                    className={inputClass}
+                                    className={`${inputClass} ${phoneError ? 'border-danger-500 bg-danger-50' : ''}`}
                                 />
+                                {phoneError && <p className="text-danger-500 text-xs mt-1 min-h-[16px]">{phoneError}</p>}
                             </div>
                             <div>
                                 <label className={labelClass}>Email <span className="text-gray-400 font-normal">(Tùy chọn)</span></label>
