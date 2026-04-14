@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Send, Paperclip, X, Loader2, Image as ImageIcon, FileText, Smile } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
 import { collection, getDocs } from "firebase/firestore";
@@ -39,7 +39,7 @@ export default function ChatInput({ onSendText, onSendFile, sending, uploadProgr
     }, []);
 
     // Filter users based on query
-    const filteredMentions = React.useMemo(() => {
+    const filteredMentions = useMemo(() => {
         if (!mentionState) return [];
         const q = mentionState.query.trim().toLowerCase();
         return allUsers.filter(u => {
