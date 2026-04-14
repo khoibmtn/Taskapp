@@ -65,11 +65,11 @@ service cloud.firestore {
     // --- OTHER COLLECTIONS ---
     
     match /users/{uid} {
-      // Allow limited public queries for login/register lookup, and allow authenticated users to list
-      allow list: if isAuthenticated() || (request.query.limit <= 2);
+      // Allow listing via authenticated users mainly.
+      allow list: if isAuthenticated();
       
       allow read: if isAuthenticated();
-      allow write: if hasRole('admin') || request.auth.uid == uid;
+      allow write: if request.auth.uid == uid || hasRole('admin');
     }
     
     match /departments/{deptId} {
@@ -109,6 +109,7 @@ service cloud.firestore {
     match /nicknames/{nickname} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow delete: if isAuthenticated() && (resource == null || resource.data.uid == request.auth.uid);
     }
 
