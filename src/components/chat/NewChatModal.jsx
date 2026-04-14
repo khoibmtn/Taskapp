@@ -48,9 +48,17 @@ export default function NewChatModal({ onClose, onCreated }) {
             const convId = `dm_${uids[0]}_${uids[1]}`;
 
             const convRef = doc(db, "conversations", convId);
-            const convSnap = await getDoc(convRef);
 
-            if (!convSnap.exists()) {
+            // Try to read — PERMISSION_DENIED means doc doesn't exist
+            let convExists = false;
+            try {
+                const convSnap = await getDoc(convRef);
+                convExists = convSnap.exists();
+            } catch {
+                convExists = false;
+            }
+
+            if (!convExists) {
                 // Create new DM conversation
                 await setDoc(convRef, {
                     type: "dm",

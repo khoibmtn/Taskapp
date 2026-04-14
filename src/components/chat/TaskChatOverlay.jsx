@@ -27,46 +27,61 @@ export default function TaskChatOverlay({ taskId, taskTitle, participants, onClo
         setInitializing(true);
 
         (async () => {
-            const convRef = doc(db, "conversations", convId);
-            const convSnap = await getDoc(convRef);
+            try {
+                const convRef = doc(db, "conversations", convId);
 
-            if (!convSnap.exists()) {
-                // Build participants list
-                const allParticipants = [...new Set(participants || [currentUser.uid])];
-                if (!allParticipants.includes(currentUser.uid)) {
-                    allParticipants.push(currentUser.uid);
+                // Try to read — will fail with PERMISSION_DENIED if doc doesn't exist
+                // (because rules check resource.data.participants which is null for non-existent docs)
+                let convExists = false;
+                try {
+                    const convSnap = await getDoc(convRef);
+                    convExists = convSnap.exists();
+                } catch {
+                    // PERMISSION_DENIED → doc doesn't exist for this user, proceed to create
+                    convExists = false;
                 }
 
-                // Build participant names
-                const participantNames = {};
-                for (const uid of allParticipants) {
-                    if (uid === currentUser.uid) {
-                        participantNames[uid] = userProfile?.fullName || "User";
-                    } else {
-                        try {
-                            const uDoc = await getDoc(doc(db, "users", uid));
-                            participantNames[uid] = uDoc.exists() ? (uDoc.data().fullName || uid) : uid;
-                        } catch {
-                            participantNames[uid] = uid;
+                if (!convExists) {
+                    // Build participants list
+                    const allParticipants = [...new Set(participants || [currentUser.uid])];
+                    if (!allParticipants.includes(currentUser.uid)) {
+                        allParticipants.push(currentUser.uid);
+                    }
+
+                    // Build participant names
+                    const participantNames = {};
+                    for (const uid of allParticipants) {
+                        if (uid === currentUser.uid) {
+                            participantNames[uid] = userProfile?.fullName || "User";
+                        } else {
+                            try {
+                                const uDoc = await getDoc(doc(db, "users", uid));
+                                participantNames[uid] = uDoc.exists() ? (uDoc.data().fullName || uid) : uid;
+                            } catch {
+                                participantNames[uid] = uid;
+                            }
                         }
                     }
+
+                    await setDoc(convRef, {
+                        type: "task",
+                        taskId: taskId,
+                        participants: allParticipants,
+                        participantNames,
+                        lastMessage: null,
+                        lastReadAt: Object.fromEntries(allParticipants.map(uid => [uid, serverTimestamp()])),
+                        unreadCounts: Object.fromEntries(allParticipants.map(uid => [uid, 0])),
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                    });
                 }
 
-                await setDoc(convRef, {
-                    type: "task",
-                    taskId: taskId,
-                    participants: allParticipants,
-                    participantNames,
-                    lastMessage: null,
-                    lastReadAt: Object.fromEntries(allParticipants.map(uid => [uid, serverTimestamp()])),
-                    unreadCounts: Object.fromEntries(allParticipants.map(uid => [uid, 0])),
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
-                });
+                setConversationId(convId);
+            } catch (err) {
+                console.error("TaskChatOverlay init error:", err);
+            } finally {
+                setInitializing(false);
             }
-
-            setConversationId(convId);
-            setInitializing(false);
         })();
     }, [taskId, currentUser, userProfile]);
 
