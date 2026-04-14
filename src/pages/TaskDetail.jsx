@@ -19,6 +19,8 @@ export default function TaskDetail() {
     const [assigneeDetails, setAssigneeDetails] = useState([]); // Array of { uid, name, status }
     const [availableUsers, setAvailableUsers] = useState([]); // For editing
 
+    const [refreshKey, setRefreshKey] = useState(0);
+
     useEffect(() => {
         async function fetchTaskAndDetails() {
             try {
@@ -100,7 +102,7 @@ export default function TaskDetail() {
         }
 
         fetchTaskAndDetails();
-    }, [taskId]);
+    }, [taskId, refreshKey]);
 
     // Action: Staff requests completion
     const handleRequestDone = async () => {
@@ -113,7 +115,7 @@ export default function TaskDetail() {
                 updatedAt: serverTimestamp()
             });
             alert("Đã gửi đề nghị hoàn thành!");
-            window.location.reload();
+            setRefreshKey(k => k + 1);
         } catch (err) {
             console.error(err);
             alert("Lỗi: " + err.message);
@@ -226,7 +228,7 @@ export default function TaskDetail() {
             }
 
             await updateDoc(taskRef, updates);
-            window.location.reload();
+            setRefreshKey(k => k + 1);
         } catch (err) {
             console.error(err);
             alert("Lỗi: " + err.message);

@@ -99,6 +99,10 @@ exports.onTaskCreated = onDocumentCreated(
     { document: "tasks/{taskId}", database: "taskapp" },
     async (event) => {
         const taskData = event.data.data();
+
+        // Template gốc không cần thông báo (Instance sinh ra từ template sẽ làm nhiệm vụ này)
+        if (taskData.isRecurringTemplate) return;
+
         const taskId = event.params.taskId;
         const taskTitle = taskData.title;
         const deptId = taskData.departmentId;
@@ -109,11 +113,13 @@ exports.onTaskCreated = onDocumentCreated(
 
         const payload = {
             type: "task_created",
-            fromUid: taskData.createdBy,
-            fromName: creatorName,
-            fromAvatar: creatorAvatar,
-            title: "Có công việc mới",
-            body: `${creatorName} vừa giao việc "${taskTitle}" cho bạn.`
+            fromUid: taskData.parentTaskId ? "system" : taskData.createdBy,
+            fromName: taskData.parentTaskId ? "Hệ thống tự động" : creatorName,
+            fromAvatar: taskData.parentTaskId ? "" : creatorAvatar,
+            title: taskData.parentTaskId ? "Lịch định kỳ" : "Có công việc mới",
+            body: taskData.parentTaskId 
+                ? `Đến lịch yêu cầu thực hiện công việc "${taskTitle}".`
+                : `${creatorName} vừa giao việc "${taskTitle}" cho bạn.`
         };
 
         // 1. Tìm tất cả Admin
@@ -133,6 +139,12 @@ exports.onTaskCreated = onDocumentCreated(
 
         // Gộp danh sách nhận (Loại trùng)
         const allRecipients = new Set([...adminUids, ...managerUids, ...assigneeUids]);
+
+        // Nếu tạo THỦ CÔNG (không phải hệ thống sinh ra từ Cron định kỳ):
+        // Loại bỏ người tạo khỏi danh sách, tránh việc tự nhắc mình khi chính mình vừa ấn giao việc.
+        if (!taskData.parentTaskId && taskData.createdBy) {
+            allRecipients.delete(taskData.createdBy);
+        }
 
         const notificationPromises = [];
         allRecipients.forEach(uid => {
@@ -187,6 +199,10 @@ exports.onTaskUpdated = onDocumentUpdated(
                         .get();
 
                     const recipients = new Set([...adminSnap.docs.map(d => d.id), ...managerSnap.docs.map(d => d.id)]);
+                    
+                    // Người yêu cầu hoàn thành không cần nhận thông báo báo cáo của chính mình
+                    recipients.delete(uid);
+
                     recipients.forEach(rUid => {
                         notificationPromises.push(sendNotificationToUser(rUid, payload, taskId));
                     });
@@ -194,6 +210,10 @@ exports.onTaskUpdated = onDocumentUpdated(
 
                 // Case 2: Manager Duyệt (pending -> approved)
                 if (newStatus === "approved") {
+                    const approvedUserDoc = await taskDb.collection("users").doc(uid).get();
+                    const approvedUserName = approvedUserDoc.exists ? (approvedUserDoc.data().fullName || uid) : uid;
+
+                    // Thông báo cho người thực hiện
                     notificationPromises.push(sendNotificationToUser(uid, {
                         type: "task_approved",
                         fromUid: "system",
@@ -204,14 +224,17 @@ exports.onTaskUpdated = onDocumentUpdated(
 
                     // Gửi cho Admin biết
                     const adminSnap = await taskDb.collection("users").where("role", "==", "admin").get();
-                    adminSnap.docs.forEach(doc => {
-                        if (doc.id !== uid) {
-                            notificationPromises.push(sendNotificationToUser(doc.id, {
-                                type: "task_approved",
-                                title: "Công việc đã duyệt",
-                                body: `Công việc "${taskTitle}" của UID ${uid} đã được duyệt.`
-                            }, taskId));
-                        }
+                    const adminRecipients = new Set(adminSnap.docs.map(d => d.id));
+                    
+                    // Loại bỏ người được duyệt (nếu người đó kiêm Admin sẽ tự nhận ở hàm trên)
+                    adminRecipients.delete(uid);
+
+                    adminRecipients.forEach(rUid => {
+                        notificationPromises.push(sendNotificationToUser(rUid, {
+                            type: "task_approved",
+                            title: "Công việc đã duyệt",
+                            body: `Công việc "${taskTitle}" của ${approvedUserName} đã được duyệt.`
+                        }, taskId));
                     });
                 }
 
