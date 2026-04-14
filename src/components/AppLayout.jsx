@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { auth, db } from "../firebase";
 import { doc, getDoc, getDocs, collection } from "firebase/firestore";
 import NotificationDropdown from "./NotificationDropdown";
+import ChatDropdown from "./ChatDropdown";
 import BottomNav from "./BottomNav";
 import {
     LayoutDashboard, BarChart3, PlusCircle, ClipboardList,
@@ -33,8 +34,8 @@ export default function AppLayout() {
 
     // Shared notification state — same source for bell icon + Dashboard badge
     const { notifications, unreadCount, markAllAsRead, markOneAsRead } = useNotifications();
-    // Chat unread count for badge
-    const { totalUnread: chatUnread } = useChatList(userProfile?.uid || currentUser?.uid);
+    // Chat conversations + unread count
+    const { conversations: chatConversations, totalUnread: chatUnread } = useChatList(userProfile?.uid || currentUser?.uid);
 
     // Listen for toggle-sidebar event from BottomNav
     useEffect(() => {
@@ -222,17 +223,11 @@ export default function AppLayout() {
                         </div>
                     </div>
                     <div className="flex items-center gap-1">
-                        <button
-                            onClick={() => navigate('/app/messages')}
-                            className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
-                        >
-                            <MessageSquare className="w-5 h-5" />
-                            {chatUnread > 0 && (
-                                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-primary-500 text-white text-[10px] font-bold rounded-full">
-                                    {chatUnread > 9 ? '9+' : chatUnread}
-                                </span>
-                            )}
-                        </button>
+                        <ChatDropdown
+                            conversations={chatConversations}
+                            totalUnread={chatUnread}
+                            currentUid={currentUser?.uid}
+                        />
                         <NotificationDropdown
                             notifications={notifications}
                             unreadCount={unreadCount}
@@ -250,17 +245,11 @@ export default function AppLayout() {
                         )}
                     </div>
                     <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => navigate('/app/messages')}
-                            className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
-                        >
-                            <MessageSquare className="w-5 h-5" />
-                            {chatUnread > 0 && (
-                                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-primary-500 text-white text-[10px] font-bold rounded-full">
-                                    {chatUnread > 9 ? '9+' : chatUnread}
-                                </span>
-                            )}
-                        </button>
+                        <ChatDropdown
+                            conversations={chatConversations}
+                            totalUnread={chatUnread}
+                            currentUid={currentUser?.uid}
+                        />
                         <NotificationDropdown
                             notifications={notifications}
                             unreadCount={unreadCount}

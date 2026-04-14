@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { collection, query, where, getDocs, onSnapshot, limit, startAfter } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../firebase";
@@ -24,6 +24,24 @@ export default function PersonalDashboard() {
     const [activeChatTitle, setActiveChatTitle] = useState('');
     const [activeChatParticipants, setActiveChatParticipants] = useState([]);
     const { conversations: chatConversations } = useChatList(currentUser?.uid);
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Handle ?openChat=taskId from ChatDropdown
+    useEffect(() => {
+        const openChatTaskId = searchParams.get('openChat');
+        if (openChatTaskId && tasksCache.all.length > 0) {
+            const task = tasksCache.all.find(t => t.id === openChatTaskId);
+            if (task) {
+                const allAssigneeUids = task.assignees ? Object.keys(task.assignees) : [];
+                const participants = [...new Set([...allAssigneeUids, task.supervisorId, task.createdBy].filter(Boolean))];
+                setActiveChatTaskId(task.id);
+                setActiveChatTitle(task.title);
+                setActiveChatParticipants(participants);
+            }
+            // Clear the param so it doesn't re-trigger
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams, tasksCache.all]);
 
     const PAGE_SIZE = 20;
 
