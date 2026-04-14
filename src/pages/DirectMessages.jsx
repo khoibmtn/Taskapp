@@ -21,6 +21,29 @@ function formatRelativeTime(timestamp) {
     return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
 }
 
+// Highlight matching search text
+const HighlightText = ({ text, highlight }) => {
+    if (!text) return null;
+    if (!highlight || !highlight.trim()) return <>{text}</>;
+    
+    // Escape regex characters from search term
+    const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedHighlight})`, 'gi');
+    const parts = text.split(regex);
+    
+    return (
+        <>
+            {parts.map((part, i) => 
+                regex.test(part) ? (
+                    <span key={i} className="text-primary-700 bg-primary-100/60 rounded-[2px] px-[1px]">{part}</span>
+                ) : (
+                    <span key={i}>{part}</span>
+                )
+            )}
+        </>
+    );
+};
+
 export default function DirectMessages() {
     const { currentUser, userProfile } = useAuth();
     const { conversationId: paramConvId } = useParams();
@@ -48,12 +71,14 @@ export default function DirectMessages() {
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             result = result.filter(c => {
+                const lastMsg = c.lastMessage?.text?.toLowerCase() || "";
+                
                 if (c.type === "task") {
-                    const title = c.taskTitle || `Task #${c.taskId?.slice(0, 6) || ''}`;
-                    return title.toLowerCase().includes(q);
+                    const title = (c.taskTitle || `Task #${c.taskId?.slice(0, 6) || ''}`).toLowerCase();
+                    return title.includes(q) || lastMsg.includes(q);
                 } else {
-                    const names = Object.values(c.participantNames || {});
-                    return names.some(n => n.toLowerCase().includes(q));
+                    const names = Object.values(c.participantNames || {}).map(n => n.toLowerCase());
+                    return names.some(n => n.includes(q)) || lastMsg.includes(q);
                 }
             });
         }
@@ -222,7 +247,7 @@ export default function DirectMessages() {
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between">
                                             <p className={`text-sm truncate ${conv.myUnread > 0 ? "font-bold text-gray-900" : "font-medium text-gray-700"}`}>
-                                                {displayName}
+                                                <HighlightText text={displayName} highlight={searchQuery} />
                                             </p>
                                             <span className="text-[10px] text-gray-400 flex-shrink-0 ml-2">
                                                 {formatRelativeTime(conv.lastMessage?.createdAt)}
@@ -230,7 +255,9 @@ export default function DirectMessages() {
                                         </div>
                                         <div className="flex items-center justify-between mt-0.5">
                                             <p className={`text-xs truncate ${conv.myUnread > 0 ? "text-gray-700 font-medium" : "text-gray-400"}`}>
-                                                {conv.lastMessage?.text || "Chưa có tin nhắn"}
+                                                {conv.lastMessage?.text ? (
+                                                    <HighlightText text={conv.lastMessage.text} highlight={searchQuery} />
+                                                ) : "Chưa có tin nhắn"}
                                             </p>
                                             {conv.myUnread > 0 && (
                                                 <span className="min-w-[18px] h-[18px] flex items-center justify-center bg-primary-500 text-white text-[10px] font-bold rounded-full px-1 flex-shrink-0 ml-2">
