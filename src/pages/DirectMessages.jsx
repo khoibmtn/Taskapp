@@ -309,7 +309,7 @@ export default function DirectMessages() {
                             conversationId={activeConvId}
                             bgClass={
                                 CHAT_BG_MAP[
-                                    activeConvId && activeChatName.startsWith('Task') 
+                                    activeConv?.type === 'task' 
                                       ? (userProfile?.chatSettings?.taskBg || 'default')
                                       : (userProfile?.chatSettings?.dmBg || 'default')
                                 ]

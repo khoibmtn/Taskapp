@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { doc, updateDoc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, runTransaction, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import { CheckCircle2, User, Phone as PhoneIcon, AtSign, Loader2, Save } from "lucide-react";
 import { CHAT_BG_MAP, CHAT_BG_LABELS, AVATAR_ICONS } from "../utils/themeConstants";
@@ -93,6 +93,18 @@ export default function Settings() {
         }
 
         try {
+            // Check absolute phone uniqueness outside transaction (safe enough for phones)
+            if (finalPhone) {
+                const phoneQuery = query(collection(db, "users"), where("phone", "==", finalPhone));
+                const phoneDocs = await getDocs(phoneQuery);
+                const isDuplicate = phoneDocs.docs.some(d => d.id !== currentUser.uid);
+                if (isDuplicate) {
+                    setErrorMsg("Số điện thoại này đã được tài khoản khác sử dụng.");
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
             const currentNickname = userProfile?.nickname || "";
             
             // If nickname changed, we must run a transaction
@@ -359,7 +371,7 @@ export default function Settings() {
                                             />
                                         </div>
                                         <p className="text-xs text-gray-500 mt-1.5 ml-1">
-                                            Dài từ 3-20 kí tự, gồm chữ thường, số, không có dấu cách hoặc kí tự đặc biệt. Dùng để đăng nhập hoặc tag tên.
+                                            Dài từ 3-20 kí tự, gồm chữ thường, số, không có dấu cách hoặc kí tự đặc biệt. Dùng để đăng nhập hoặc tag tên. Nếu không có nickname thì hệ thống sẽ tag (@) bằng chính họ tên của bạn.
                                         </p>
                                     </div>
                                 </div>
