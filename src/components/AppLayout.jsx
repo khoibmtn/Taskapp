@@ -264,7 +264,11 @@ export default function AppLayout() {
                     </div>
                 </header>
 
-                <main className="flex-1 p-4 lg:p-6 overflow-auto pb-safe lg:pb-6 relative">
+                <main className={`flex-1 relative ${
+                    location.pathname.startsWith('/app/messages')
+                        ? 'overflow-hidden p-0'
+                        : 'p-4 lg:p-6 overflow-auto pb-safe lg:pb-6'
+                }`}>
                     <Outlet />
                 </main>
             </div>
