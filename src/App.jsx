@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { Toaster } from 'react-hot-toast';
 import Login from './pages/Login';
@@ -26,9 +27,28 @@ import Register from './pages/Register';
 import WaitingApproval from './pages/WaitingApproval';
 import OfflineIndicator from './components/OfflineIndicator';
 
+// Listens for postMessage from service worker notification clicks
+// and navigates client-side via React Router (avoids full page reload)
+function ServiceWorkerNavigator() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (event.data?.type === 'NOTIFICATION_CLICK' && event.data.url) {
+        navigate(event.data.url);
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', handler);
+    return () => navigator.serviceWorker?.removeEventListener('message', handler);
+  }, [navigate]);
+
+  return null;
+}
+
 function App() {
   return (
     <Router>
+      <ServiceWorkerNavigator />
       <AuthProvider>
         <OfflineIndicator />
         <Routes>

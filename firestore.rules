@@ -60,6 +60,12 @@ service cloud.firestore {
 
       // ASIGNER can create tasks for their department
       allow create: if hasRole('asigner') && request.resource.data.get('departmentId', '') == getUserData().get('departmentId', '');
+
+      // STAFF can create tasks assigned to themselves within their department
+      allow create: if hasRole('staff') && 
+        request.resource.data.get('departmentId', '') == getUserData().get('departmentId', '') &&
+        request.resource.data.get('createdBy', '') == request.auth.uid &&
+        request.auth.uid in request.resource.data.get('assigneeUids', []);
     }
 
     // --- OTHER COLLECTIONS ---

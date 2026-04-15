@@ -95,6 +95,7 @@ cd /Users/buiminhkhoi/Documents/Antigravity/Taskapp && git status --short
 ```bash
 cd /Users/buiminhkhoi/Documents/Antigravity/Taskapp && git add -A
 ```
+> **Ensure Context is Saved**: Make sure to stage `CODEBASE.md`, `SESSION_NOTES.md`, and any modified `docs/superpowers/specs/...` documents.
 
 #### 2.3 Commit with descriptive message
 ```bash

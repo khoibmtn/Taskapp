@@ -13,14 +13,15 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // Firebase SDK background handler
+// Firebase SDK auto-shows notification when payload has `notification` key
 messaging.onBackgroundMessage((payload) => {
     console.log('[SW] Firebase background message:', payload);
-    // Firebase SDK auto-shows notification from payload.notification
-    // Only need manual show if using data-only messages
+    // No manual showNotification needed — SDK handles it
 });
 
-// Direct push event handler — critical for iOS PWA
-// iOS Safari may not trigger onBackgroundMessage but does fire 'push' event
+// Fallback push handler — ONLY for data-only messages or when Firebase SDK
+// doesn't catch the event (e.g., iOS Safari PWA edge case).
+// Messages with `notification` key are already auto-shown by Firebase SDK above.
 self.addEventListener('push', (event) => {
     if (!event.data) return;
 
@@ -28,22 +29,33 @@ self.addEventListener('push', (event) => {
     try {
         data = event.data.json();
     } catch (e) {
-        data = { notification: { title: 'TaskApp', body: event.data.text() } };
+        // Unparseable payload — show generic notification
+        event.waitUntil(
+            self.registration.showNotification('TaskApp', {
+                body: event.data.text() || 'Bạn có thông báo mới',
+                icon: '/logo192.png',
+                badge: '/logo192.png'
+            })
+        );
+        return;
     }
 
-    // Skip if Firebase SDK already handled it (check if notification is auto-shown)
-    const notif = data.notification || {};
-    const title = notif.title || 'TaskApp';
+    // If message has `notification` key, Firebase SDK will auto-show it.
+    // Skip manual show to prevent duplicate notifications.
+    if (data.notification) return;
+
+    // Data-only message — manually show notification
+    const title = data.data?.title || 'TaskApp';
+    const body = data.data?.body || 'Bạn có thông báo mới';
     const options = {
-        body: notif.body || 'Bạn có thông báo mới',
+        body,
         icon: '/logo192.png',
         badge: '/logo192.png',
-        tag: data.data?.taskId || 'taskapp-general',
+        tag: data.data?.tag || 'taskapp-general',
         renotify: true,
         vibrate: [200, 100, 200],
-        requireInteraction: true,
         data: {
-            url: data.fcmOptions?.link || data.data?.url || '/app'
+            url: data.data?.url || '/app'
         }
     };
 
@@ -52,7 +64,7 @@ self.addEventListener('push', (event) => {
     );
 });
 
-// Handle notification click — open/focus the app
+// Handle notification click — focus existing window and navigate client-side
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
 
@@ -61,14 +73,22 @@ self.addEventListener('notificationclick', (event) => {
 
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            // Focus existing window if found
+            // Try to focus an existing window and navigate via postMessage
             for (const client of clientList) {
                 if (client.url.includes(self.location.origin) && 'focus' in client) {
-                    client.navigate(fullUrl);
-                    return client.focus();
+                    return client.focus().then((focusedClient) => {
+                        // Tell the React app to navigate client-side (no full reload)
+                        if (focusedClient) {
+                            focusedClient.postMessage({
+                                type: 'NOTIFICATION_CLICK',
+                                url: url
+                            });
+                        }
+                        return focusedClient;
+                    });
                 }
             }
-            // Open new window
+            // No existing window — open a new one
             return clients.openWindow(fullUrl);
         })
     );

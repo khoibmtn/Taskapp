@@ -104,6 +104,10 @@ Create/update `docs/SESSION_NOTES.md`:
 - <list files with significant changes>
 ```
 
+#### 1.5 Update Feature Spec (If any)
+
+If the session involved working on a feature with an existing specification document (e.g., in `docs/superpowers/specs/`), ensure the document is updated to reflect any new architectural concepts, edge-case handlings, bug-fixes, or feature scope changes. 
+
 ---
 
 ### Phase 2: Run /sync
@@ -141,6 +145,7 @@ After saving context files, execute the full `/sync` workflow:
 ### Context
 - **CODEBASE.md** — Updated project overview + architecture
 - **docs/SESSION_NOTES.md** — Session changes logged
+- **docs/superpowers/specs/...** — (If applicable) Feature spec updated
 
 ### Sync
 - ✅ Pre-flight checks passed

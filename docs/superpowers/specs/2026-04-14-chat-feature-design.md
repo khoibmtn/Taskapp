@@ -20,7 +20,7 @@
 - PWA trên iOS là platform chính.
 
 ### 1.3 Phân pha
-- **Phase 1**: Task Chat + DM cơ bản + gửi ảnh/file + thông báo realtime.
+- **Phase 1**: Task Chat + DM cơ bản + gửi ảnh/file + thông báo realtime + Mentions (@nickname) cơ bản.
 - **Phase 2**: Tag/nhắc công việc trong DM, typing indicator, emoji reactions, short-lived signed URLs cho file nhạy cảm.
 
 ---
@@ -75,7 +75,14 @@ messages/{messageId}
 ├── createdAt: Timestamp               // Server timestamp (authoritative)
 ├── clientCreatedAt: number            // 🔑 Date.now() fallback cho ordering khi serverTimestamp chưa resolve
 ├── isDeleted: boolean                 // Soft delete
-└── deletedAt: Timestamp | null        // Khi nào bị xóa
+├── deletedAt: Timestamp | null        // Khi nào bị xóa
+└── mentions: [                        // (MỚI) Cache thông tin user được tag (@) để hiển thị
+      {
+        uid: string
+        nickname: string | null
+        fullName: string
+      }
+    ]
 ```
 
 **Defensive fields giải thích:**
@@ -313,10 +320,11 @@ User chọn file → Preview + progress bar
 | Component | Mô tả |
 |-----------|--------|
 | `ChatMessageList` | Render tin nhắn, auto-scroll, load thêm khi scroll lên |
-| `ChatInput` | Input + nút đính kèm + nút gửi |
-| `ChatBubble` | 1 tin nhắn (text/image/file), phân biệt gửi/nhận, timestamp |
+| `ChatInput` | Input + nút đính kèm + nút gửi + Xử lý Autocomplete Mentions (@) |
+| `ChatBubble` | 1 tin nhắn (text/image/file), phân biệt gửi/nhận, timestamp, highlight @Mentions |
 | `AttachmentPreview` | Ảnh: thumbnail inline. File: icon + tên + size + download |
 | `ChatBadge` | Badge số chưa đọc (dùng nhiều nơi) |
+| `ErrorBoundary` | (MỚI) Lớp khiên bảo vệ bắt lỗi crash component (được bọc trong `ChatBubble` và `ChatInput`) tránh trắng trang. |
 
 ### 5.2 Task Chat Components
 
